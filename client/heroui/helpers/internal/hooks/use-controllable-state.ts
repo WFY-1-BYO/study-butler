@@ -1,3 +1,4 @@
+// @ts-nocheck
 // This project uses code from WorkOS/Radix Primitives.
 // The code is licensed under the MIT License.
 // https://github.com/radix-ui/primitives/tree/main

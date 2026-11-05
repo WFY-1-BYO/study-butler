@@ -1,3 +1,4 @@
+// @ts-nocheck
 import React, { forwardRef, useMemo } from 'react';
 import { View, Text as RNText } from 'react-native';
 import { GestureDetector } from 'react-native-gesture-handler';

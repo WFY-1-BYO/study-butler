@@ -1,0 +1,196 @@
+import { Router } from "express";
+import { LLMClient, Config } from "coze-coding-dev-sdk";
+import { getSupabaseClient } from "@/storage/database/supabase-client.js";
+
+const router = Router();
+const db = getSupabaseClient();
+
+function safeJsonParse(text: string): any {
+  // 尝试直接解析
+  try {
+    return JSON.parse(text);
+  } catch {
+    /* ignore */
+  }
+  // 如果 LLM 返回了代码块包裹，去掉 ```json ... ```
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenced) {
+    try {
+      return JSON.parse(fenced[1].trim());
+    } catch {
+      /* ignore */
+    }
+  }
+  // 去掉首个 { 之前和最后一个 } 之后的内容
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start >= 0 && end > start) {
+    try {
+      return JSON.parse(text.slice(start, end + 1));
+    } catch {
+      /* ignore */
+    }
+  }
+  return null;
+}
+
+async function llmInvoke(system: string, user: string): Promise<string> {
+  const config = new Config();
+  const client = new LLMClient(config);
+  const messages = [
+    { role: "system" as const, content: system },
+    { role: "user" as const, content: user },
+  ];
+  const resp = await client.invoke(messages, { model: "doubao-seed-2-0-pro-260215", temperature: 0.6 });
+  return resp.content;
+}
+
+// POST /api/v1/ai/plan-event
+// body: { event_id }  —— 为事件倒推生成每日计划任务并写库
+router.post("/plan-event", async (req, res) => {
+  const { event_id } = req.body;
+  if (!event_id) return res.status(400).json({ error: "event_id 不能为空" });
+  const id = Number(event_id);
+
+  const { data: ev, error: evErr } = await db.from("events").select("*").eq("id", id).maybeSingle();
+  if (evErr) {
+    console.error("查询事件失败:", evErr.message);
+    return res.status(500).json({ error: evErr.message });
+  }
+  if (!ev) return res.status(404).json({ error: "事件不存在" });
+
+  const subjectName = ev.subject_id
+    ? (await db.from("subjects").select("name").eq("id", ev.subject_id).maybeSingle()).data?.name
+    : null;
+
+  const now = new Date();
+  const start = new Date(ev.start_at);
+  const daysLeft = Math.max(1, Math.ceil((start.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)));
+  // 最多拆 7 天
+  const span = Math.min(daysLeft, 7);
+  const startDate = new Date(now.getTime() + Math.max(0, daysLeft - span) * 24 * 60 * 60 * 1000);
+
+  const system = "你是一名极度高效的中学生学习管家。你的任务是给一个事件倒推出每日学习计划，按「最小可执行方案」原则。只输出 JSON，不要任何多余文字。";
+  const user = `事件：${ev.title}（${subjectName || "无科目"}），今天是 ${now.toLocaleDateString()}，将于 ${start.toLocaleDateString()} 进行，剩余约 ${daysLeft} 天。
+请拆出 ${span} 天（从 ${startDate.toLocaleDateString()} 到 ${start.toLocaleDateString()}）的每日任务，每天一个 ≤30 分钟的小任务，并标注哪一天是最低保底日（只做那件事也能基本准备，is_fallback=true）。
+输出 JSON 数组，格式：[{"date":"YYYY-MM-DD","task":"任务描述","minutes":20,"is_fallback":false}]`;
+
+  try {
+    const raw = await llmInvoke(system, user);
+    const tasks = safeJsonParse(raw);
+    if (!Array.isArray(tasks)) {
+      // 兜底：LLM 输出异常时生成简单拆解，绝不用模拟数据
+      const fallbackTasks = Array.from({ length: span }, (_, i) => {
+        const d = new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000);
+        return {
+          date: d.toISOString().slice(0, 10),
+          task: `复习《${ev.title}》第 ${i + 1} 天`,
+          minutes: 25,
+          is_fallback: i === span - 1,
+        };
+      });
+      await insertTasks(id, fallbackTasks);
+      return res.json({ tasks: fallbackTasks, fallback: true });
+    }
+    // 清洗字段
+    const cleaned = tasks
+      .filter((t: any) => t && t.date && t.task)
+      .map((t: any) => ({
+        date: String(t.date).slice(0, 10),
+        task: String(t.task),
+        minutes: Number(t.minutes) || 25,
+        is_fallback: !!t.is_fallback,
+      }));
+    if (cleaned.length === 0) throw new Error("空任务");
+    await insertTasks(id, cleaned);
+    res.json({ tasks: cleaned, fallback: false });
+  } catch (e: any) {
+    console.error("AI 生成计划失败:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+async function insertTasks(event_id: number, tasks: any[]) {
+  for (let i = 0; i < tasks.length; i += 50) {
+    const batch = tasks.slice(i, i + 50).map((t) => ({
+      event_id,
+      plan_date: `${t.date}T08:00:00.000Z`,
+      task: t.task,
+      minutes: t.minutes,
+      is_fallback: t.is_fallback,
+    }));
+    const { error } = await db.from("plan_tasks").insert(batch);
+    if (error) throw new Error(error.message);
+  }
+}
+
+// POST /api/v1/ai/material
+// body: { subject_id, week_no, topic, title }
+// 生成学习材料：3条核心概念 + 10道题(3易5中2难) + 答案&错因 + 一句话易错点
+router.post("/material", async (req, res) => {
+  const config = new Config();
+  const client = new LLMClient(config);
+
+  const { subject_id, week_no, topic, title } = req.body;
+  if (!subject_id || !topic) return res.status(400).json({ error: "subject_id 和 topic 不能为空" });
+
+  const subjectId = Number(subject_id);
+  const subRes = await db.from("subjects").select("name").eq("id", subjectId).maybeSingle();
+  if (subRes.error || !subRes.data) return res.status(404).json({ error: "学科不存在" });
+  const subjectName = subRes.data.name;
+
+  const system = `你是中国中学/大学的一对一私教老师。为「${subjectName}」第 ${week_no} 周的专题「${topic}」准备一份高质量学习材料。只输出严格 JSON，不要多余文字。
+JSON 结构：
+{
+  "concepts": [{"title":"核心概念1","desc":"简明讲解，不超过60字"}, ...共3条],
+  "questions": [{"level":"易/中/难","content":"题目内容"}, ...共10题：3易5中2难],
+  "answers": [{"index":0,"answer":"答案","reason":"错因分析，说明选错/答错的学生通常错在哪"}],
+  "pitfall": "一句话：这一节学生最容易错的地方，以及避开方法"
+}`;
+
+  const user = `请为《${subjectName}》第 ${week_no} 周、专题「${topic}」生成材料，题目类型要多样化。`;
+
+  try {
+    // 流式收集
+    let raw = "";
+    const stream = client.stream(
+      [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+      { model: "doubao-seed-2-0-pro-260215", temperature: 0.6 }
+    );
+    for await (const chunk of stream) {
+      if (chunk.content) raw += chunk.content.toString();
+    }
+    const parsed = safeJsonParse(raw);
+    if (!parsed || !Array.isArray(parsed.questions) || !Array.isArray(parsed.concepts)) {
+      return res.status(500).json({ error: "AI 返回格式异常，请重试" });
+    }
+
+    const { data, error } = await db
+      .from("materials")
+      .insert({
+        subject_id: subjectId,
+        week_no: week_no ?? 1,
+        topic,
+        type: "material",
+        title: title || `${subjectName} W${week_no} ${topic}`,
+        content: parsed,
+        source: "AI 生成，需自行核对",
+        ai_generated: true,
+      })
+      .select()
+      .single();
+    if (error) {
+      console.error("保存材料失败:", error.message);
+      return res.status(500).json({ error: error.message });
+    }
+    res.status(201).json(data);
+  } catch (e: any) {
+    console.error("AI 生成材料失败:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+export default router;

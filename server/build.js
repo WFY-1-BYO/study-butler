@@ -13,6 +13,7 @@ try {
     format: 'esm',
     outdir: 'dist',
     external: externalList,
+    alias: { '@': './src' },
   });
   console.log('⚡ Build complete!');
 } catch (e) {
