@@ -17,10 +17,12 @@ import {
   Subject,
   Event,
   PlanTask,
+  DailyBrief,
   formatAbs,
   formatDate,
   daysBetween,
   typeLabel,
+  priorityLabel,
 } from '@/utils/types';
 import { useSafeRouter } from '@/hooks/useSafeRouter';
 
@@ -36,6 +38,35 @@ function CountdownChip({ days }: { days: number }) {
       <Text style={{ color, fontWeight: '800', fontSize: 13 }}>{label}</Text>
     </View>
   );
+}
+
+// ---------- 子组件：资料状态徽标 ----------
+function MaterialBadge({ status }: { status: string }) {
+  if (status === 'ready') {
+    return (
+      <View className="px-2 py-0.5 rounded-full flex-row items-center gap-1" style={{ backgroundColor: '#05966918' }}>
+        <FontAwesome6 name="circle-check" size={10} color="#059669" />
+        <Text style={{ color: '#059669', fontSize: 11, fontWeight: '700' }}>资料就绪</Text>
+      </View>
+    );
+  }
+  if (status === 'preparing') {
+    return (
+      <View className="px-2 py-0.5 rounded-full flex-row items-center gap-1" style={{ backgroundColor: '#D9770618' }}>
+        <FontAwesome6 name="rotate" size={10} color="#D97706" />
+        <Text style={{ color: '#D97706', fontSize: 11, fontWeight: '700' }}>备料中</Text>
+      </View>
+    );
+  }
+  if (status === 'failed') {
+    return (
+      <View className="px-2 py-0.5 rounded-full flex-row items-center gap-1" style={{ backgroundColor: '#DC262618' }}>
+        <FontAwesome6 name="triangle-exclamation" size={10} color="#DC2626" />
+        <Text style={{ color: '#DC2626', fontSize: 11, fontWeight: '700' }}>资料未就绪</Text>
+      </View>
+    );
+  }
+  return null;
 }
 
 // ---------- 子组件：今日必修卡 ----------
@@ -75,19 +106,14 @@ export default function HomeScreen() {
   const isTablet = width >= 768;
 
   const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [todayEvents, setTodayEvents] = useState<Event[]>([]);
-  const [upcoming, setUpcoming] = useState<Event[]>([]);
+  const [brief, setBrief] = useState<DailyBrief>({ urgent: [], regular: [], flexible: [], all: [] });
   const [todayTasks, setTodayTasks] = useState<PlanTask[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await api.get<{
-        today: Event[];
-        upcoming: (Event & { days_left: number })[];
-      }>('/api/v1/events/today');
-      setTodayEvents(res.today || []);
-      setUpcoming(res.upcoming || []);
+      const res = await api.get<DailyBrief>('/api/v1/events/brief');
+      setBrief(res);
 
       const todayStr = dayjs().format('YYYY-MM-DD');
       const tasks = await api.get<PlanTask[]>(`/api/v1/plan-tasks?date=${todayStr}`);
@@ -114,8 +140,14 @@ export default function HomeScreen() {
   const fallbackTask =
     openTasks.find((t) => t.is_fallback) || openTasks[openTasks.length - 1];
 
-  const topEvent: Event & { days_left?: number } | null =
-    upcoming.find((e) => !e.done) || todayEvents.find((e) => !e.done) || null;
+  const topEvent: Event | null =
+    brief.all.find((e) => !e.done) || null;
+
+  const sections: { key: string; title: string; icon: string; color: string; bg: string; items: Event[] }[] = [
+    { key: 'urgent', title: '紧急重要', icon: 'fire', color: '#DC2626', bg: '#DC262618', items: brief.urgent.filter((e) => !e.done) },
+    { key: 'regular', title: '重要常规', icon: 'list-check', color: '#4F46E5', bg: '#4F46E518', items: brief.regular.filter((e) => !e.done) },
+    { key: 'flexible', title: '弹性琐事', icon: 'feather', color: '#0891B2', bg: '#0891B218', items: brief.flexible.filter((e) => !e.done) },
+  ].filter((s) => s.items.length > 0);
 
   return (
     <Screen safeAreaEdges={['left', 'right', 'bottom']} statusBarStyle="auto">
@@ -135,7 +167,7 @@ export default function HomeScreen() {
             {dayjs().format('dddd, M月D日')}
           </Text>
           <View className="flex-row items-center justify-between">
-            <Text className="text-2xl font-extrabold text-gray-900">你的今日看板</Text>
+            <Text className="text-2xl font-extrabold text-gray-900">早间简报</Text>
             <TouchableOpacity
               onPress={() => router.push('/schedule')}
               className="w-10 h-10 rounded-2xl items-center justify-center"
@@ -152,6 +184,53 @@ export default function HomeScreen() {
           mustDo={mustDo ? `${mustDo.task}（${mustDo.minutes} 分钟）` : '今天暂无计划任务，去日程里添加一个吧'}
           fallback={fallbackTask ? `只做：${fallbackTask.task}` : '放松一下，给自己留点余地'}
         />
+
+        {/* 三档分组简报 */}
+        {sections.map((sec) => (
+          <View key={sec.key} className="mb-5">
+            <View className="flex-row items-center gap-2 mb-2.5">
+              <View className="w-7 h-7 rounded-lg items-center justify-center" style={{ backgroundColor: sec.bg }}>
+                <FontAwesome6 name={sec.icon as any} size={13} color={sec.color} />
+              </View>
+              <Text className="text-sm font-bold text-gray-800">{sec.title}</Text>
+              <Text className="text-xs text-gray-400">{sec.items.length} 项</Text>
+            </View>
+            <View className="rounded-3xl p-3" style={{ backgroundColor: '#FFFFFF', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } }}>
+              {sec.items.map((e) => {
+                const subj = subjectById(e.subject_id);
+                return (
+                  <TouchableOpacity
+                    key={e.id}
+                    className="flex-row items-center gap-2 py-2.5 px-1 border-b border-gray-50 last:border-0"
+                    onPress={() => router.push('/schedule', { focus: 'detail', id: e.id })}
+                  >
+                    <View className="w-2 h-2 rounded-full" style={{ backgroundColor: subj?.color || '#9CA3AF' }} />
+                    <View className="flex-1">
+                      <View className="flex-row items-center gap-2 flex-wrap">
+                        <Text className="text-sm font-semibold text-gray-800 flex-shrink">{e.title}</Text>
+                        {e.need_quiz ? (
+                          <View className="px-1.5 py-0.5 rounded-full" style={{ backgroundColor: '#7C3AED18' }}>
+                            <Text style={{ color: '#7C3AED', fontSize: 10, fontWeight: '700' }}>需抽查</Text>
+                          </View>
+                        ) : null}
+                      </View>
+                      <View className="flex-row items-center gap-2 mt-0.5 flex-wrap">
+                        <Text className="text-xs text-gray-400">{formatAbs(e.start_at)} · {typeLabel(e.type)}</Text>
+                        {e.need_material ? <MaterialBadge status={e.material_status} /> : null}
+                        {e.need_quiz ? (
+                          <TouchableOpacity onPress={() => router.push('/schedule', { focus: 'quiz', id: e.id })}>
+                            <Text style={{ color: '#7C3AED', fontSize: 11, fontWeight: '700' }}>去自测 →</Text>
+                          </TouchableOpacity>
+                        ) : null}
+                      </View>
+                    </View>
+                    <CountdownChip days={e.days_left ?? 0} />
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        ))}
 
         {/* 今日任务进度（平板双栏 / 手机单列） */}
         <View className="flex-row flex-wrap" style={{ gap: 12 }}>
@@ -176,13 +255,13 @@ export default function HomeScreen() {
             )}
           </View>
 
-          {/* 近期事件 */}
+          {/* 近期里程碑 */}
           <View className="rounded-3xl p-5 mb-1 flex-1 min-w-[240px]" style={{ backgroundColor: '#FFFFFF', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } }}>
             <Text className="text-sm font-bold text-gray-700 mb-3">近期里程碑</Text>
-            {upcoming.length === 0 && todayEvents.length === 0 ? (
+            {brief.all.length === 0 ? (
               <Text className="text-gray-400 text-sm">暂无事件</Text>
             ) : (
-              [...todayEvents, ...upcoming].slice(0, 5).map((e) => {
+              brief.all.slice(0, 5).map((e) => {
                 const days = daysBetween(new Date(), new Date(e.start_at));
                 const subj = subjectById(e.subject_id);
                 return (

@@ -23,10 +23,13 @@ import {
   Subject,
   Event,
   PlanTask,
+  Quiz,
   EVENT_TYPES,
+  PRIORITIES,
   typeLabel,
   formatAbs,
   daysBetween,
+  priorityLabel,
 } from '@/utils/types';
 import { useSafeSearchParams } from '@/hooks/useSafeRouter';
 
@@ -94,12 +97,22 @@ export default function ScheduleScreen() {
   const [editing, setEditing] = useState<Event | null>(null);
   const [generating, setGenerating] = useState(false);
 
+  // 抽查自测
+  const [quizModalVisible, setQuizModalVisible] = useState(false);
+  const [quizEvent, setQuizEvent] = useState<Event | null>(null);
+  const [quizzes, setQuizzes] = useState<Quiz[]>([]);
+  const [quizLoading, setQuizLoading] = useState(false);
+  const [reveal, setReveal] = useState<Record<number, boolean>>({});
+
   // 表单
   const [title, setTitle] = useState('');
   const [type, setType] = useState('test');
   const [subjectId, setSubjectId] = useState<number | null>(null);
   const [startAt, setStartAt] = useState<string | null>(null);
   const [remindBefore, setRemindBefore] = useState(1440);
+  const [priority, setPriority] = useState('regular');
+  const [needQuiz, setNeedQuiz] = useState(false);
+  const [needMaterial, setNeedMaterial] = useState(false);
   const [notes, setNotes] = useState('');
 
   const fetchData = useCallback(async () => {
@@ -114,6 +127,10 @@ export default function ScheduleScreen() {
       // 深链：高亮并打开详情
       if (focus === 'detail' && id) {
         setDetailId(Number(id));
+      }
+      if (focus === 'quiz' && id) {
+        setDetailId(Number(id));
+        openQuiz(Number(id), evts.find((x) => x.id === Number(id)) || null);
       }
     } catch (e: any) {
       Toast.show({ type: 'error', text1: '加载失败', text2: e.message });
@@ -133,6 +150,9 @@ export default function ScheduleScreen() {
     setSubjectId(subjects[0]?.id ?? null);
     setStartAt(null);
     setRemindBefore(1440);
+    setPriority('regular');
+    setNeedQuiz(false);
+    setNeedMaterial(false);
     setNotes('');
     setModalVisible(true);
   };
@@ -144,8 +164,33 @@ export default function ScheduleScreen() {
     setSubjectId(e.subject_id);
     setStartAt(e.start_at);
     setRemindBefore(e.remind_before_min);
+    setPriority(e.priority || 'regular');
+    setNeedQuiz(!!e.need_quiz);
+    setNeedMaterial(!!e.need_material);
     setNotes(e.notes || '');
     setModalVisible(true);
+  };
+
+  const openQuiz = async (evId: number, ev: Event | null) => {
+    setQuizEvent(ev);
+    setQuizModalVisible(true);
+    setReveal({});
+    setQuizLoading(true);
+    try {
+      const qs = await api.get<Quiz[]>(`/api/v1/ai/quiz/${evId}`);
+      if (qs && qs.length > 0) {
+        setQuizzes(qs);
+      } else {
+        await api.post('/api/v1/ai/quiz', { event_id: evId });
+        const qs2 = await api.get<Quiz[]>(`/api/v1/ai/quiz/${evId}`);
+        setQuizzes(qs2 || []);
+      }
+    } catch (e: any) {
+      Toast.show({ type: 'error', text1: '加载抽查题失败', text2: e.message });
+      setQuizzes([]);
+    } finally {
+      setQuizLoading(false);
+    }
   };
 
   const handleSave = async () => {
@@ -165,6 +210,9 @@ export default function ScheduleScreen() {
           subject_id: subjectId,
           start_at: startAt,
           remind_before_min: remindBefore,
+          priority,
+          need_quiz: needQuiz,
+          need_material: needMaterial,
           notes: notes.trim() || null,
         });
       } else {
@@ -174,6 +222,9 @@ export default function ScheduleScreen() {
           subject_id: subjectId,
           start_at: startAt,
           remind_before_min: remindBefore,
+          priority,
+          need_quiz: needQuiz,
+          need_material: needMaterial,
           notes: notes.trim() || null,
         });
       }
@@ -203,6 +254,28 @@ export default function ScheduleScreen() {
       fetchData();
     } catch (err: any) {
       Toast.show({ type: 'error', text1: '生成失败', text2: err.message });
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handlePrefetch = async (e: Event) => {
+    if (!e.subject_id) {
+      Toast.show({ type: 'error', text1: '请先给这个事件选一个学科' });
+      return;
+    }
+    try {
+      setGenerating(true);
+      await api.post('/api/v1/ai/prefetch-material', {
+        event_id: e.id,
+        subject_id: e.subject_id,
+        topic: e.title,
+      });
+      Toast.show({ type: 'success', text1: '资料已就绪', text2: '去「资料库」查看' });
+      fetchData();
+    } catch (err: any) {
+      Toast.show({ type: 'error', text1: '预取失败', text2: err.message });
+      fetchData();
     } finally {
       setGenerating(false);
     }
@@ -294,7 +367,7 @@ export default function ScheduleScreen() {
                   </View>
                   <Text className="text-xs text-gray-400 mb-4">{formatAbs(detailEvent.start_at)}</Text>
                   <ScrollView className="max-h-[400px]">
-                    <View className="flex-row gap-3 mb-4">
+                    <View className="flex-row gap-3 mb-4 flex-wrap">
                       <TouchableOpacity
                         onPress={() => openEdit(detailEvent)}
                         className="flex-1 py-2.5 rounded-2xl items-center flex-row justify-center gap-2"
@@ -312,6 +385,29 @@ export default function ScheduleScreen() {
                         <FontAwesome6 name="wand-magic-sparkles" size={14} color="#EA580C" />
                         <Text className="text-orange-800 font-bold text-sm">{generating ? '生成中…' : 'AI 生计划'}</Text>
                       </TouchableOpacity>
+                      {detailEvent.need_quiz ? (
+                        <TouchableOpacity
+                          onPress={() => openQuiz(detailEvent.id, detailEvent)}
+                          className="py-2.5 px-4 rounded-2xl items-center flex-row gap-1.5 justify-center"
+                          style={{ backgroundColor: '#7C3AED18' }}
+                        >
+                          <FontAwesome6 name="q" size={14} color="#7C3AED" />
+                          <Text className="text-violet-800 font-bold text-sm">抽查</Text>
+                        </TouchableOpacity>
+                      ) : null}
+                      {detailEvent.need_material ? (
+                        <TouchableOpacity
+                          onPress={() => handlePrefetch(detailEvent)}
+                          disabled={generating}
+                          className="py-2.5 px-4 rounded-2xl items-center flex-row gap-1.5 justify-center"
+                          style={{ backgroundColor: '#0EA5E918' }}
+                        >
+                          <FontAwesome6 name="cloud-arrow-down" size={14} color="#0284C7" />
+                          <Text className="text-sky-700 font-bold text-sm">
+                            {detailEvent.material_status === 'ready' ? '资料就绪' : detailEvent.material_status === 'preparing' ? '备料中' : '预取资料'}
+                          </Text>
+                        </TouchableOpacity>
+                      ) : null}
                       <TouchableOpacity
                         onPress={() => handleDelete(detailEvent)}
                         className="py-2.5 px-4 rounded-2xl items-center justify-center"
@@ -421,6 +517,43 @@ export default function ScheduleScreen() {
                       ))}
                     </View>
 
+                    <Text className="text-xs font-bold text-gray-500 mb-1 mt-1">优先级</Text>
+                    <View className="flex-row flex-wrap gap-2 mb-3">
+                      {PRIORITIES.map((p) => (
+                        <TouchableOpacity
+                          key={p.value}
+                          onPress={() => setPriority(p.value)}
+                          className="px-3 py-2 rounded-full"
+                          style={{ backgroundColor: priority === p.value ? '#3730A318' : '#F3F4F6' }}
+                        >
+                          <Text style={{ color: priority === p.value ? '#3730A3' : '#6B7280', fontWeight: '600', fontSize: 12 }}>{p.label}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    <View className="flex-row gap-3 mb-3">
+                      <TouchableOpacity
+                        onPress={() => setNeedMaterial((v) => !v)}
+                        className={`flex-1 rounded-2xl p-3 flex-row items-center gap-2 ${needMaterial ? 'border border-emerald-300' : 'border border-gray-200'}`}
+                      >
+                        <FontAwesome6 name={needMaterial ? 'circle-check' : 'circle'} size={18} color={needMaterial ? '#059669' : '#9CA3AF'} />
+                        <View className="flex-1">
+                          <Text className="text-sm font-bold text-gray-800">需资料预取</Text>
+                          <Text className="text-xs text-gray-400">外刊/网课/物料，提前备好</Text>
+                        </View>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => setNeedQuiz((v) => !v)}
+                        className={`flex-1 rounded-2xl p-3 flex-row items-center gap-2 ${needQuiz ? 'border border-violet-300' : 'border border-gray-200'}`}
+                      >
+                        <FontAwesome6 name={needQuiz ? 'circle-check' : 'circle'} size={18} color={needQuiz ? '#7C3AED' : '#9CA3AF'} />
+                        <View className="flex-1">
+                          <Text className="text-sm font-bold text-gray-800">需抽查</Text>
+                          <Text className="text-xs text-gray-400">背诵类随机自测</Text>
+                        </View>
+                      </TouchableOpacity>
+                    </View>
+
                     <Text className="text-xs font-bold text-gray-500 mb-1">备注</Text>
                     <TextInput
                       value={notes}
@@ -453,6 +586,60 @@ export default function ScheduleScreen() {
               </View>
             </KeyboardAvoidingView>
           </TouchableWithoutFeedback>
+        </Modal>
+
+        {/* 抽查自测 Modal */}
+        <Modal visible={quizModalVisible} transparent animationType="fade">
+          <View className="flex-1 bg-black/40 p-5 justify-center">
+            <View className="bg-white rounded-3xl p-5 w-full max-w-md self-center max-h-[85%]">
+              <View className="flex-row items-center justify-between mb-3">
+                <View className="flex-row items-center gap-2">
+                  <View className="w-8 h-8 rounded-xl items-center justify-center" style={{ backgroundColor: '#7C3AED18' }}>
+                    <FontAwesome6 name="q" size={15} color="#7C3AED" />
+                  </View>
+                  <View>
+                    <Text className="text-base font-extrabold text-gray-900">抽查自测</Text>
+                    <Text className="text-xs text-gray-400">{quizEvent?.title || ''}</Text>
+                  </View>
+                </View>
+                <TouchableOpacity onPress={() => setQuizModalVisible(false)}>
+                  <FontAwesome6 name="xmark" size={18} color="#9CA3AF" />
+                </TouchableOpacity>
+              </View>
+              <ScrollView className="max-h-[500px]" style={{ gap: 10 }}>
+                {quizLoading ? (
+                  <Text className="text-gray-400 text-center py-8">AI 出题中，稍等…</Text>
+                ) : quizzes.length === 0 ? (
+                  <Text className="text-gray-400 text-center py-8">暂无抽查题，去日程标记「需抽查」后重试</Text>
+                ) : (
+                  quizzes.map((q, i) => (
+                    <View key={q.id} className="rounded-2xl p-4" style={{ backgroundColor: '#F7F5F0' }}>
+                      <View className="flex-row items-start gap-2">
+                        <View className="w-6 h-6 rounded-full items-center justify-center" style={{ backgroundColor: '#7C3AED18' }}>
+                          <Text style={{ color: '#7C3AED', fontWeight: '800', fontSize: 12 }}>{i + 1}</Text>
+                        </View>
+                        <Text className="flex-1 text-sm font-semibold text-gray-800">{q.question}</Text>
+                      </View>
+                      {q.hint ? (<Text className="text-xs text-amber-700 mt-1 ml-8">提示：{q.hint}</Text>) : null}
+                      {reveal[q.id] ? (
+                        <View className="rounded-xl p-2.5 mt-2 ml-8" style={{ backgroundColor: '#05966914' }}>
+                          <Text className="text-sm text-emerald-800"><Text className="font-bold">答案：</Text>{q.answer}</Text>
+                        </View>
+                      ) : (
+                        <TouchableOpacity
+                          onPress={() => setReveal((r) => ({ ...r, [q.id]: true }))}
+                          className="self-start mt-2 ml-8 px-3 py-1 rounded-full"
+                          style={{ backgroundColor: '#7C3AED18' }}
+                        >
+                          <Text style={{ color: '#7C3AED', fontSize: 12, fontWeight: '700' }}>先自测，再看答案</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  ))
+                )}
+              </ScrollView>
+            </View>
+          </View>
         </Modal>
       </View>
     </Screen>

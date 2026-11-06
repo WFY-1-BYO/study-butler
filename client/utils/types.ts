@@ -12,12 +12,35 @@ export interface Event {
   id: number;
   subject_id: number | null;
   title: string;
-  type: 'test' | 'homework' | 'activity' | 'recite' | string;
+  type: 'test' | 'homework' | 'activity' | 'recite' | 'material' | 'reading' | 'course' | string;
   start_at: string;
   remind_before_min: number;
+  priority: 'urgent' | 'regular' | 'flexible' | string;
+  need_quiz: boolean;
+  need_material: boolean;
+  material_status: 'none' | 'preparing' | 'ready' | 'failed' | string;
   notes: string | null;
   done: boolean;
   created_at: string;
+  tasks?: PlanTask[];
+  days_left?: number;
+  date_key?: string;
+}
+
+export interface Quiz {
+  id: number;
+  event_id: number;
+  question: string;
+  answer: string;
+  hint: string | null;
+  created_at: string;
+}
+
+export interface DailyBrief {
+  urgent: Event[];
+  regular: Event[];
+  flexible: Event[];
+  all: Event[];
 }
 
 export interface PlanTask {
@@ -64,10 +87,23 @@ export const EVENT_TYPES: { value: string; label: string; icon: string }[] = [
   { value: 'homework', label: '作业', icon: 'file-pen' },
   { value: 'recite', label: '背诵', icon: 'book' },
   { value: 'activity', label: '活动', icon: 'calendar-day' },
+  { value: 'reading', label: '外刊阅读', icon: 'newspaper' },
+  { value: 'course', label: '网课', icon: 'graduation-cap' },
+  { value: 'material', label: '物料积累', icon: 'folder-open' },
+];
+
+export const PRIORITIES: { value: string; label: string; desc: string }[] = [
+  { value: 'urgent', label: '紧急重要', desc: '截止前 24h/3h/30min 三次提醒' },
+  { value: 'regular', label: '重要常规', desc: '截止前 1h 提醒一次' },
+  { value: 'flexible', label: '弹性琐事', desc: '仅出现在早间简报' },
 ];
 
 export function typeLabel(t: string): string {
   return EVENT_TYPES.find((x) => x.value === t)?.label || '待办';
+}
+
+export function priorityLabel(p: string): string {
+  return PRIORITIES.find((x) => x.value === p)?.label || '重要常规';
 }
 
 // 简单的绝对时间表述

@@ -124,6 +124,140 @@ async function insertTasks(event_id: number, tasks: any[]) {
   }
 }
 
+// POST /api/v1/ai/quiz
+// body: { event_id }  —— 为"需抽查"的背诵任务随机生成 3~5 道自测题并写库
+router.post("/quiz", async (req, res) => {
+  const { event_id } = req.body;
+  if (!event_id) return res.status(400).json({ error: "event_id 不能为空" });
+  const id = Number(event_id);
+  const { data: ev, error: evErr } = await db.from("events").select("*").eq("id", id).maybeSingle();
+  if (evErr) {
+    console.error("查询事件失败:", evErr.message);
+    return res.status(500).json({ error: evErr.message });
+  }
+  if (!ev) return res.status(404).json({ error: "事件不存在" });
+
+  const { data: existing, error: exErr } = await db.from("quizzes").select("*").eq("event_id", id).limit(10);
+  if (exErr) {
+    console.error("查询题目失败:", exErr.message);
+    return res.status(500).json({ error: exErr.message });
+  }
+  if (existing && existing.length >= 3) return res.json({ quizzes: existing, from_cache: true });
+
+  const system = "你是抽查自测的出题者。根据学习内容生成 3~5 道自测题，去检验学生是否真的记住了。只输出 JSON 数组，不要多余文字。格式：[{\"question\":\"问题\",\"answer\":\"答案\",\"hint\":\"提示词\"}]";
+  const user = `请为事件「${ev.title}」（备注：${ev.notes || "无"}）生成 3~5 道抽查自测题，覆盖核心知识点，问法要有变化并适合快速自测。`;
+
+  try {
+    const raw = await llmInvoke(system, user);
+    const parsed = safeJsonParse(raw);
+    const arr = Array.isArray(parsed) ? parsed : parsed?.quizzes;
+    if (!Array.isArray(arr) || arr.length === 0) {
+      return res.status(500).json({ error: "AI 返回格式异常，请重试" });
+    }
+    const rows = arr
+      .filter((q: any) => q && q.question && q.answer)
+      .slice(0, 5)
+      .map((q: any) => ({ event_id: id, question: String(q.question), answer: String(q.answer), hint: q.hint ? String(q.hint) : null }));
+    if (rows.length === 0) return res.status(500).json({ error: "题目生成失败" });
+    const { data, error: insErr } = await db.from("quizzes").insert(rows).select();
+    if (insErr) {
+      console.error("保存题目失败:", insErr.message);
+      return res.status(500).json({ error: insErr.message });
+    }
+    res.status(201).json({ quizzes: data, from_cache: false });
+  } catch (e: any) {
+    console.error("AI 生成题目失败:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/v1/ai/quiz/:event_id
+// 读取某事件已生成的抽查题
+router.get("/quiz/:event_id", async (req, res) => {
+  const id = Number(req.params.event_id);
+  if (Number.isNaN(id)) return res.status(400).json({ error: "无效 event_id" });
+  const { data, error } = await db.from("quizzes").select("*").eq("event_id", id).order("created_at", { ascending: true });
+  if (error) {
+    console.error("查询题目失败:", error.message);
+    return res.status(500).json({ error: error.message });
+  }
+  res.json(data || []);
+});
+
+// POST /api/v1/ai/prefetch-material
+// body: { event_id, subject_id, topic }  —— 资料预取：为将开始的任务提前备好资料
+router.post("/prefetch-material", async (req, res) => {
+  const { event_id, subject_id, topic } = req.body;
+  if (!event_id || !subject_id) return res.status(400).json({ error: "event_id 和 subject_id 不能为空" });
+
+  // 先标记为 preparing
+  await db.from("events").update({ material_status: "preparing" }).eq("id", Number(event_id));
+
+  const subRes = await db.from("subjects").select("name").eq("id", Number(subject_id)).maybeSingle();
+  if (subRes.error || !subRes.data) return res.status(404).json({ error: "学科不存在" });
+  const subjectName = subRes.data.name;
+  const topic2 = topic || "预习材料";
+
+  const config = new Config();
+  const client = new LLMClient(config);
+  const system = `你是「前瞻管家」的资料预取员。为「${subjectName}」的主题「${topic2}」提前准备一份轻量学习包，让学生在开始学习前就能快速进入状态。只输出严格 JSON，不要多余文字。
+JSON 结构：
+{
+  "concepts": [{"title":"核心概念1","desc":"简明讲解，不超过50字"}, ...共3条],
+  "outer_text": "一段200字内的背景/导读文字",
+  "vocabulary": [{"word":"生词/术语","meaning":"释义"}, ...3~8条],
+  "questions": [{"level":"易/中/难","content":"2~3道预热或外刊理解题"}],
+  "sources": ["来源1描述", "来源2描述", "来源3描述"]
+}`;
+
+  const user = `请为《${subjectName}》主题「${topic2}」生成资料预取包。这是外刊/网课/物料类的预习材料，要能在任务开始前让学生快速进入状态。`;
+
+  try {
+    let raw = "";
+    const stream = client.stream(
+      [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+      { model: "doubao-seed-2-0-pro-260215", temperature: 0.6 }
+    );
+    for await (const chunk of stream) {
+      if (chunk.content) raw += chunk.content.toString();
+    }
+    const parsed = safeJsonParse(raw);
+    if (!parsed || !Array.isArray(parsed.concepts)) {
+      await db.from("events").update({ material_status: "failed" }).eq("id", Number(event_id));
+      return res.status(500).json({ error: "AI 返回格式异常，请重试" });
+    }
+
+    const weekNo = Math.ceil((Date.now() - new Date(new Date().getFullYear(), 0, 1).getTime()) / (7 * 24 * 60 * 60 * 1000));
+    const { data: material, error: insErr } = await db
+      .from("materials")
+      .insert({
+        subject_id: Number(subject_id),
+        week_no: weekNo,
+        topic: topic2,
+        type: "material_prep",
+        title: `${subjectName} ${topic2}（预取）`,
+        content: parsed,
+        source: "AI 前置预取",
+        ai_generated: true,
+      })
+      .select()
+      .single();
+    if (insErr) {
+      await db.from("events").update({ material_status: "failed" }).eq("id", Number(event_id));
+      return res.status(500).json({ error: insErr.message });
+    }
+    await db.from("events").update({ material_status: "ready" }).eq("id", Number(event_id));
+    res.status(201).json({ material, status: "ready" });
+  } catch (e: any) {
+    console.error("AI 预取资料失败:", e.message);
+    await db.from("events").update({ material_status: "failed" }).eq("id", Number(event_id));
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // POST /api/v1/ai/material
 // body: { subject_id, week_no, topic, title }
 // 生成学习材料：3条核心概念 + 10道题(3易5中2难) + 答案&错因 + 一句话易错点
