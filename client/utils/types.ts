@@ -43,6 +43,14 @@ export interface DailyBrief {
   all: Event[];
 }
 
+export interface KnowledgeItem {
+  id: number;
+  subject_id: number;
+  title: string;
+  content: string;
+  created_at: string;
+}
+
 export interface PlanTask {
   id: number;
   event_id: number;

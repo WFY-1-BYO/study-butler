@@ -5,6 +5,7 @@ import eventsRouter from "./routes/events.js";
 import planTasksRouter from "./routes/plan-tasks.js";
 import materialsRouter from "./routes/materials.js";
 import aiRouter from "./routes/ai.js";
+import knowledgeRouter from "./routes/knowledge.js";
 
 const app = express();
 const port = process.env.PORT || 9091;
@@ -24,6 +25,7 @@ app.use('/api/v1/events', eventsRouter);
 app.use('/api/v1/plan-tasks', planTasksRouter);
 app.use('/api/v1/materials', materialsRouter);
 app.use('/api/v1/ai', aiRouter);
+app.use('/api/v1/knowledge', knowledgeRouter);
 
 app.listen(port, () => {
   console.log(`Server listening at http://localhost:${port}/`);

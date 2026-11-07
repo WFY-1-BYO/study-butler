@@ -45,6 +45,30 @@ async function llmInvoke(system: string, user: string): Promise<string> {
   return resp.content;
 }
 
+// 从知识库中检索某学科相关的学习资料，作为 AI 出题/备料的"教材依据"
+async function fetchRelevantKnowledge(
+  subjectId: number | null,
+  keyword?: string
+): Promise<{ title: string; content: string }[]> {
+  if (subjectId == null) return [];
+  const { data, error } = await db
+    .from("knowledge")
+    .select("title, content")
+    .eq("subject_id", subjectId)
+    .limit(20);
+  if (error || !data || data.length === 0) return [];
+  // 若有关键词，按相关性粗略排序（包含关键词的靠前）
+  if (keyword) {
+    const kw = keyword.trim().toLowerCase();
+    data.sort((a, b) => {
+      const ab = (a.content + a.title).toLowerCase().includes(kw) ? 1 : 0;
+      const bb = (b.content + b.title).toLowerCase().includes(kw) ? 1 : 0;
+      return bb - ab;
+    });
+  }
+  return data.slice(0, 6);
+}
+
 // POST /api/v1/ai/plan-event
 // body: { event_id }  —— 为事件倒推生成每日计划任务并写库
 router.post("/plan-event", async (req, res) => {
@@ -144,8 +168,16 @@ router.post("/quiz", async (req, res) => {
   }
   if (existing && existing.length >= 3) return res.json({ quizzes: existing, from_cache: true });
 
+  // 检索该事件对应学科自己的资料，作为出题依据
+  const knowledge = await fetchRelevantKnowledge(ev.subject_id, ev.notes || ev.title);
+  const materialBlock =
+    knowledge.length > 0
+      ? "\n\n以下是我自己录入的学习资料（务必严格基于这些内容出题，不要超出）:\n" +
+        knowledge.map((k) => `【${k.title}】\n${k.content}`).join("\n\n")
+      : "\n\n（注意：用户还没有录入该学科的学习资料，请基于你学科通识出题，并避免编造具体公式以外的细节）";
+
   const system = "你是抽查自测的出题者。根据学习内容生成 3~5 道自测题，去检验学生是否真的记住了。只输出 JSON 数组，不要多余文字。格式：[{\"question\":\"问题\",\"answer\":\"答案\",\"hint\":\"提示词\"}]";
-  const user = `请为事件「${ev.title}」（备注：${ev.notes || "无"}）生成 3~5 道抽查自测题，覆盖核心知识点，问法要有变化并适合快速自测。`;
+  const user = `请为事件「${ev.title}」（备注：${ev.notes || "无"}）生成 3~5 道抽查自测题，覆盖核心知识点，问法要有变化并适合快速自测。${materialBlock}`;
 
   try {
     const raw = await llmInvoke(system, user);
@@ -198,6 +230,14 @@ router.post("/prefetch-material", async (req, res) => {
   const subjectName = subRes.data.name;
   const topic2 = topic || "预习材料";
 
+  // 检索该学科自己的资料，作为预取依据
+  const knowledge = await fetchRelevantKnowledge(Number(subject_id), topic2);
+  const materialBlock =
+    knowledge.length > 0
+      ? "\n\n以下是我自己录入了该学科的学习资料（务必结合这些内容做导读和出题）:\n" +
+        knowledge.map((k) => `【${k.title}】\n${k.content}`).join("\n\n")
+      : "";
+
   const config = new Config();
   const client = new LLMClient(config);
   const system = `你是「前瞻管家」的资料预取员。为「${subjectName}」的主题「${topic2}」提前准备一份轻量学习包，让学生在开始学习前就能快速进入状态。只输出严格 JSON，不要多余文字。
@@ -210,7 +250,7 @@ JSON 结构：
   "sources": ["来源1描述", "来源2描述", "来源3描述"]
 }`;
 
-  const user = `请为《${subjectName}》主题「${topic2}」生成资料预取包。这是外刊/网课/物料类的预习材料，要能在任务开始前让学生快速进入状态。`;
+  const user = `请为《${subjectName}》主题「${topic2}」生成资料预取包。这是外刊/网课/物料类的预习材料，要能在任务开始前让学生快速进入状态。${materialBlock}`;
 
   try {
     let raw = "";
@@ -273,6 +313,14 @@ router.post("/material", async (req, res) => {
   if (subRes.error || !subRes.data) return res.status(404).json({ error: "学科不存在" });
   const subjectName = subRes.data.name;
 
+  // 检索该学科自己录入的资料，作为出题和讲解的教材依据
+  const knowledge = await fetchRelevantKnowledge(subjectId, topic);
+  const materialBlock =
+    knowledge.length > 0
+      ? "\n\n以下是我自己录入了该学科的学习资料（务必严格基于这些内容讲解与出题，引用其中的公式/定义/术语，不要凭空编造）:\n" +
+        knowledge.map((k) => `【${k.title}】\n${k.content}`).join("\n\n")
+      : "\n\n（注意：用户还没有为该学科录入资料，请基于学科通识讲解，但要避免编造超出规律的细节，并在文末提示用户可录入教材以更贴合）";
+
   const system = `你是中国中学/大学的一对一私教老师。为「${subjectName}」第 ${week_no} 周的专题「${topic}」准备一份高质量学习材料。只输出严格 JSON，不要多余文字。
 JSON 结构：
 {
@@ -282,7 +330,7 @@ JSON 结构：
   "pitfall": "一句话：这一节学生最容易错的地方，以及避开方法"
 }`;
 
-  const user = `请为《${subjectName}》第 ${week_no} 周、专题「${topic}」生成材料，题目类型要多样化。`;
+  const user = `请为《${subjectName}》第 ${week_no} 周、专题「${topic}」生成材料，题目类型要多样化。${materialBlock}`;
 
   try {
     // 流式收集
