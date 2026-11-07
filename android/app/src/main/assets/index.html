@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<title>学习管家</title>
+<style>
+:root{
+  --bg:#0f1115; --panel:#181b22; --panel2:#1f2330; --line:#2a2f3c;
+  --txt:#e8ecf4; --dim:#8b94a7; --acc:#4f8cff; --acc2:#22c55e;
+  --warn:#f59e0b; --danger:#ef4444;
+  --math:#4f8cff; --chem:#22c55e; --bio:#a855f7;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;height:100%}
+body{
+  background:var(--bg); color:var(--txt);
+  font-family:"Segoe UI Variable","Segoe UI","Microsoft YaHei","微软雅黑","Source Han Sans SC","Noto Sans CJK SC","HarmonyOS Sans SC",system-ui,sans-serif;
+  font-size:16px; line-height:1.5; overflow:hidden;
+}
+#app{display:flex; flex-direction:column; height:100dvh; max-width:1400px; margin:0 auto;}
+
+/* 顶栏 */
+.topbar{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:14px 18px; border-bottom:1px solid var(--line); background:var(--panel);
+  flex-shrink:0;
+}
+.brand{font-size:17px; font-weight:700; letter-spacing:.5px}
+.brand small{color:var(--dim); font-weight:400; font-size:12px; margin-left:8px}
+.topright{display:flex; gap:8px; align-items:center}
+.icon-btn{
+  background:var(--panel2); border:1px solid var(--line); color:var(--txt);
+  width:38px; height:38px; border-radius:10px; display:flex; align-items:center;
+  justify-content:center; font-size:18px; cursor:pointer; transition:.15s;
+}
+.icon-btn:active{transform:scale(.94); background:var(--line)}
+
+/* 主区域 */
+.main{flex:1; display:flex; overflow:hidden}
+.content{flex:1; overflow-y:auto; padding:20px; -webkit-overflow-scrolling:touch}
+
+/* 底部导航（手机）/ 侧边栏（平板） */
+.nav{
+  display:flex; background:var(--panel); border-top:1px solid var(--line);
+  flex-shrink:0; padding:6px 4px calc(6px + env(safe-area-inset-bottom));
+}
+.nav-item{
+  flex:1; display:flex; flex-direction:column; align-items:center; gap:3px;
+  padding:8px 4px; border-radius:12px; cursor:pointer; color:var(--dim);
+  font-size:11px; font-weight:500; transition:.15s; border:none; background:none;
+}
+.nav-item .ic{font-size:20px; line-height:1}
+.nav-item.active{color:var(--acc); background:rgba(79,140,255,.1)}
+
+/* 平板：侧栏 */
+@media (min-width:820px){
+  #app{flex-direction:row}
+  .topbar{order:-1}
+  .sidebar{
+    width:230px; flex-shrink:0; background:var(--panel);
+    border-right:1px solid var(--line); display:flex; flex-direction:column;
+    padding:16px 12px;
+  }
+  .nav{flex-direction:column; border-top:none; flex:1; padding:0; gap:6px}
+  .nav-item{flex-direction:row; justify-content:flex-start; gap:12px; padding:13px 16px; font-size:15px}
+  .nav-item .ic{font-size:18px; width:22px; text-align:center}
+  .content{padding:28px 36px}
+  .main{flex-direction:row}
+  .topbar{display:none}
+}
+
+/* 卡片 */
+.card{
+  background:var(--panel); border:1px solid var(--line); border-radius:16px;
+  padding:18px; margin-bottom:14px;
+}
+.card-title{font-size:13px; color:var(--dim); font-weight:600; letter-spacing:.5px;
+  text-transform:uppercase; margin-bottom:12px; display:flex; align-items:center; justify-content:space-between}
+
+/* 今日卡 · 主角 */
+.hero{
+  background:linear-gradient(135deg,#1b2340 0%,#16202e 100%);
+  border:1px solid #2c3a5c; border-radius:20px; padding:22px; margin-bottom:16px;
+  position:relative; overflow:hidden;
+}
+.hero::after{
+  content:''; position:absolute; width:220px; height:220px; border-radius:50%;
+  background:radial-gradient(circle,rgba(79,140,255,.18),transparent 70%);
+  right:-70px; top:-70px; pointer-events:none;
+}
+.hero-date{font-size:13px; color:var(--dim); margin-bottom:6px}
+.hero-head{font-size:26px; font-weight:800; margin-bottom:4px; line-height:1.25}
+.hero-sub{font-size:14px; color:#9fb0cc}
+
+.mustdo-list{margin-top:18px; display:flex; flex-direction:column; gap:10px}
+.mustdo{
+  display:flex; align-items:flex-start; gap:12px; background:rgba(255,255,255,.04);
+  border-radius:12px; padding:13px 14px; border:1px solid rgba(255,255,255,.06);
+}
+.mustdo .num{
+  width:24px; height:24px; border-radius:8px; background:var(--acc); color:#fff;
+  font-size:13px; font-weight:700; display:flex; align-items:center; justify-content:center;
+  flex-shrink:0; margin-top:1px;
+}
+.mustdo .txt{flex:1; min-width:0}
+.mustdo .t1{font-size:15px; font-weight:600; margin-bottom:2px}
+.mustdo .t2{font-size:12.5px; color:var(--dim)}
+.mustdo .chk{
+  width:24px; height:24px; border:2px solid #3a4356; border-radius:50%;
+  flex-shrink:0; cursor:pointer; display:flex; align-items:center; justify-content:center;
+  font-size:13px; color:transparent; transition:.15s;
+}
+.mustdo .chk.done{background:var(--acc2); border-color:var(--acc2); color:#fff}
+.mustdo.done .t1{text-decoration:line-through; color:var(--dim)}
+
+.fallback{
+  margin-top:16px; padding:14px 16px; border-radius:12px;
+  background:rgba(245,158,11,.08); border:1px solid rgba(245,158,11,.28);
+}
+.fallback .label{font-size:11.5px; color:var(--warn); font-weight:700; letter-spacing:.6px; margin-bottom:5px}
+.fallback .body{font-size:14px; color:#e6d5b8; line-height:1.55}
+
+/* 倒计时 chips */
+.chips{display:flex; flex-wrap:wrap; gap:10px}
+.chip{
+  background:var(--panel2); border:1px solid var(--line); border-radius:12px;
+  padding:11px 15px; display:flex; align-items:center; gap:9px; font-size:13.5px;
+}
+.dot{width:8px; height:8px; border-radius:50%; flex-shrink:0}
+.chip b{margin-left:auto; font-variant-numeric:tabular-nums}
+.chip.urgent{border-color:rgba(239,68,68,.5); background:rgba(239,68,68,.08)}
+.chip.urgent b{color:#f87171}
+
+/* 表单 */
+.field{margin-bottom:13px}
+.field label{display:block; font-size:12.5px; color:var(--dim); margin-bottom:6px; font-weight:500}
+input,select,textarea{
+  width:100%; background:var(--panel2); border:1px solid var(--line); color:var(--txt);
+  border-radius:10px; padding:11px 13px; font-size:15px; font-family:inherit; outline:none;
+  transition:.15s;
+}
+input:focus,select:focus,textarea:focus{border-color:var(--acc); background:#242938}
+textarea{resize:vertical; min-height:70px}
+.row{display:flex; gap:10px}
+.row>*{flex:1; min-width:0}
+
+.btn{
+  background:var(--acc); color:#fff; border:none; border-radius:11px;
+  padding:13px 18px; font-size:15px; font-weight:600; cursor:pointer;
+  font-family:inherit; transition:.15s; width:100%;
+}
+.btn:active{transform:scale(.98); opacity:.9}
+.btn.ghost{background:var(--panel2); border:1px solid var(--line); color:var(--txt)}
+.btn.sm{width:auto; padding:9px 15px; font-size:13.5px; border-radius:9px}
+.btn.danger{background:rgba(239,68,68,.15); color:#f87171; border:1px solid rgba(239,68,68,.3)}
+
+/* 列表项 */
+.item{
+  background:var(--panel); border:1px solid var(--line); border-radius:14px;
+  padding:15px 17px; margin-bottom:10px; display:flex; align-items:center; gap:13px;
+}
+.item .main2{flex:1; min-width:0}
+.item .title{font-size:15.5px; font-weight:600; margin-bottom:3px}
+.item .meta{font-size:12.5px; color:var(--dim); display:flex; gap:10px; flex-wrap:wrap}
+.badge{
+  font-size:11px; padding:2.5px 9px; border-radius:20px; font-weight:600;
+  background:var(--panel2); border:1px solid var(--line);
+}
+.badge.past{background:rgba(107,114,128,.15); color:#9ca3af}
+.badge.soon{background:rgba(245,158,11,.15); color:var(--warn); border-color:rgba(245,158,11,.3)}
+
+/* 空状态 */
+.empty{
+  text-align:center; padding:56px 20px; color:var(--dim);
+}
+.empty .big{font-size:44px; margin-bottom:14px; opacity:.5}
+.empty p{margin:0 0 8px; font-size:14.5px}
+.empty .hint{font-size:13px; opacity:.75}
+
+/* 弹窗 */
+.modal-mask{
+  position:fixed; inset:0; background:rgba(0,0,0,.65); z-index:100;
+  display:none; align-items:flex-end; justify-content:center; backdrop-filter:blur(3px);
+}
+.modal-mask.show{display:flex}
+.modal{
+  background:var(--panel); border-radius:22px 22px 0 0; width:100%; max-width:640px;
+  max-height:88vh; overflow-y:auto; padding:22px; animation:up .22s ease;
+  border:1px solid var(--line); border-bottom:none;
+}
+@keyframes up{from{transform:translateY(40px);opacity:.6}to{transform:translateY(0);opacity:1}}
+@media (min-width:820px){
+  .modal-mask{align-items:center}
+  .modal{border-radius:20px; border-bottom:1px solid var(--line); max-height:80vh}
+}
+.modal h3{margin:0 0 18px; font-size:18px}
+
+/* 学科色条 */
+.subj-bar{width:4px; align-self:stretch; border-radius:4px; flex-shrink:0; min-height:34px}
+.math{background:var(--math)} .chem{background:var(--chem)} .bio{background:var(--bio)}
+
+.sec-h{font-size:19px; font-weight:700; margin:0 0 14px; display:flex; align-items:center; justify-content:space-between}
+.sec-h .act{font-size:13.5px; color:var(--acc); cursor:pointer; font-weight:600}
+
+.toast{
+  position:fixed; bottom:90px; left:50%; transform:translateX(-50%) translateY(20px);
+  background:#2a3142; border:1px solid var(--line); color:var(--txt);
+  padding:12px 22px; border-radius:12px; font-size:14px; z-index:200;
+  opacity:0; transition:.25s; pointer-events:none; box-shadow:0 8px 30px rgba(0,0,0,.4);
+  white-space:nowrap; max-width:90vw; overflow:hidden; text-overflow:ellipsis;
+}
+.toast.show{opacity:1; transform:translateX(-50%) translateY(0)}
+
+/* 平板双栏 */
+.grid2{display:grid; grid-template-columns:1fr; gap:16px}
+@media (min-width:1100px){ .grid2{grid-template-columns:1.15fr .85fr} }
+
+/* 学习包 */
+.pack{
+  background:var(--panel); border:1px solid var(--line); border-radius:14px;
+  padding:16px 18px; margin-bottom:12px; cursor:pointer;
+}
+.pack-head{display:flex; align-items:center; gap:12px; margin-bottom:7px}
+.pack-week{font-size:11.5px; color:var(--acc); font-weight:700; letter-spacing:.6px}
+.pack-title{font-size:15.5px; font-weight:600}
+.pack-desc{font-size:13px; color:var(--dim); line-height:1.6}
+
+.progress-bar{height:5px; background:var(--panel2); border-radius:3px; overflow:hidden; margin-top:10px}
+.progress-bar>i{display:block; height:100%; background:var(--acc); border-radius:3px; transition:width .3s}
+
+.kv{display:flex; justify-content:space-between; padding:11px 0; border-bottom:1px solid var(--line); font-size:14.5px}
+.kv:last-child{border-bottom:none}
+.kv .k{color:var(--dim)}
+.kv .v{font-weight:600}
+
+.hide{display:none!important}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="topbar">
+    <div class="brand">学习管家 <small>数学 · 化学 · 生物</small></div>
+    <div class="topright">
+      <button class="icon-btn" onclick="openSettings()" title="设置">⚙</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <aside class="sidebar">
+      <nav class="nav" id="nav">
+        <button class="nav-item active" data-tab="today"><span class="ic">◎</span><span>今日</span></button>
+        <button class="nav-item" data-tab="schedule"><span class="ic">▦</span><span>日程</span></button>
+        <button class="nav-item" data-tab="study"><span class="ic">✎</span><span>学习计划</span></button>
+        <button class="nav-item" data-tab="library"><span class="ic">▤</span><span>资料库</span></button>
+      </nav>
+    </aside>
+
+    <div class="content" id="content"></div>
+  </div>
+
+  <nav class="nav" id="navBottom" style="display:none">
+    <button class="nav-item active" data-tab="today"><span class="ic">◎</span><span>今日</span></button>
+    <button class="nav-item" data-tab="schedule"><span class="ic">▦</span><span>日程</span></button>
+    <button class="nav-item" data-tab="study"><span class="ic">✎</span><span>计划</span></button>
+    <button class="nav-item" data-tab="library"><span class="ic">▤</span><span>资料</span></button>
+  </nav>
+</div>
+
+<div class="modal-mask" id="mask" onclick="if(event.target===this)closeModal()">
+  <div class="modal" id="modalBody"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   学习管家 · 单文件离线版
+   数据全部存在本设备 localStorage，可导出 JSON 备份
+   ============================================================ */
+
+const SUBJECTS = [
+  { id:'math', name:'数学', cls:'math', color:'#4f8cff' },
+  { id:'chem', name:'化学', cls:'chem', color:'#22c55e' },
+  { id:'bio',  name:'生物', cls:'bio',  color:'#a855f7' },
+];
+
+const STORE_KEY = 'study_butler_v1';
+
+/* ---------- 数据层 ---------- */
+function defaultData(){
+  return {
+    events: [],      // {id,title,subject,date,time,note,priority,done}
+    packs: [],       // {id,subject,week,topic,points[],questions[],pitfall,createdAt}
+    settings: { apiBase:'', apiKey:'', model:'deepseek-chat' },
+    meta: { createdAt: Date.now() }
+  };
+}
+let DB = load();
+
+function load(){
+  // 优先从 App 私有存储读（Android 原生层），其次 localStorage
+  try{
+    if(window.Native && Native.load){
+      const nativeRaw = Native.load();
+      if(nativeRaw && nativeRaw.length > 2){
+        const d = JSON.parse(nativeRaw);
+        const base = defaultData();
+        return { ...base, ...d, settings:{...base.settings, ...(d.settings||{})} };
+      }
+    }
+  }catch(e){}
+
+  try{
+    const raw = localStorage.getItem(STORE_KEY);
+    if(!raw) return defaultData();
+    const d = JSON.parse(raw);
+    const base = defaultData();
+    return { ...base, ...d, settings:{...base.settings, ...(d.settings||{})} };
+  }catch(e){ return defaultData(); }
+}
+function save(){
+  const raw = JSON.stringify(DB);
+  try{
+    if(window.Native && Native.save) Native.save(raw);   // 存进 App 私有目录
+  }catch(e){}
+  try{ localStorage.setItem(STORE_KEY, raw); }            // 双保险
+  catch(e){ toast('保存失败：存储空间可能已满'); }
+}
+
+/* ---------- 系统闹钟（真正会响的那部分） ---------- */
+function hasNative(){ return !!(window.Native && Native.scheduleAlarm); }
+
+/** 把一条日程转成时间戳。有 time 用 time，没 time 就当天 08:00 */
+function eventTimestamp(e){
+  const t = e.time || '08:00';
+  const d = parseDate(e.date);
+  const [h, m] = t.split(':').map(Number);
+  d.setHours(h || 8, m || 0, 0, 0);
+  return d.getTime();
+}
+
+/** 核心：为一条日程排两个闹钟——开始前提醒 + 开始时刻 */
+function scheduleEventAlarms(e){
+  if(!hasNative() || e.done) return;
+  const start = eventTimestamp(e);
+  const now = Date.now();
+  const sname = subj(e.subject).name;
+
+  // ① 提前量：默认 30 分钟；如果是当天且已过，则跳过
+  const ahead = start - 30 * 60 * 1000;
+  if(ahead > now){
+    Native.scheduleAlarm(
+      e.id + '_pre',
+      `30 分钟后：${e.title}`,
+      `${sname} · ${e.time || ''}  提前准备一下，别到点才想起来。`,
+      ahead
+    );
+  }
+
+  // ② 开始时刻
+  if(start > now){
+    Native.scheduleAlarm(
+      e.id,
+      e.title,
+      (e.note ? e.note + ' — ' : '') + `${sname} · 现在开始`,
+      start
+    );
+  }
+
+  // ③ 记录到数据里，重启后 BootReceiver 靠它恢复
+  e.alarmAt = start;
+}
+
+/** 全量重排（导入数据、改设置后调用） */
+function rescheduleAll(){
+  if(!hasNative()) return;
+  DB.events.forEach(e=>{
+    if(!e.done) scheduleEventAlarms(e);
+  });
+}
+
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+
+/* ---------- 工具 ---------- */
+function todayStr(){ const d=new Date(); return ymd(d); }
+function ymd(d){
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function parseDate(s){ const [y,m,d]=s.split('-').map(Number); return new Date(y,m-1,d); }
+function daysUntil(dateStr){
+  const t = parseDate(todayStr()).getTime();
+  const x = parseDate(dateStr).getTime();
+  return Math.round((x-t)/86400000);
+}
+function weekdayCN(s){
+  return ['周日','周一','周二','周三','周四','周五','周六'][parseDate(s).getDay()];
+}
+function esc(s){
+  return String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function subj(id){ return SUBJECTS.find(s=>s.id===id) || {name:'其他',cls:'',color:'#6b7280'}; }
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._tm); t._tm = setTimeout(()=>t.classList.remove('show'), 2200);
+}
+
+/* ---------- 视图状态 ---------- */
+let TAB = 'today';
+
+document.querySelectorAll('.nav-item').forEach(el=>{
+  el.onclick = ()=>{ TAB = el.dataset.tab; render(); };
+});
+
+function syncNav(){
+  document.querySelectorAll('.nav-item').forEach(e=>{
+    e.classList.toggle('active', e.dataset.tab === TAB);
+  });
+}
+
+/* 手机/平板切换导航 */
+function isWide(){ return window.innerWidth >= 820; }
+function applyLayout(){
+  const side = document.querySelector('.sidebar');
+  const bottom = document.getElementById('navBottom');
+  const top = document.querySelector('.topbar');
+  if(isWide()){
+    side.style.display = 'flex';
+    bottom.style.display = 'none';
+    top.style.display = 'none';
+  }else{
+    side.style.display = 'none';
+    bottom.style.display = 'flex';
+    top.style.display = 'flex';
+  }
+}
+window.addEventListener('resize', applyLayout);
+
+/* ============================================================
+   渲染
+   ============================================================ */
+function render(){
+  syncNav();
+  const c = document.getElementById('content');
+  if(TAB==='today') c.innerHTML = viewToday();
+  if(TAB==='schedule') c.innerHTML = viewSchedule();
+  if(TAB==='study') c.innerHTML = viewStudy();
+  if(TAB==='library') c.innerHTML = viewLibrary();
+  c.scrollTop = 0;
+}
+
+/* ---------- 今日 ---------- */
+function viewToday(){
+  const now = new Date();
+  const hh = now.getHours();
+  const greet = hh<6?'夜深了':hh<11?'早上好':hh<14?'中午好':hh<18?'下午好':'晚上好';
+  const upcoming = DB.events
+    .filter(e=>!e.done && daysUntil(e.date) >= 0)
+    .sort((a,b)=> a.date.localeCompare(b.date) || (a.time||'').localeCompare(b.time||''));
+
+  const todayEvents = upcoming.filter(e=>daysUntil(e.date)===0);
+  const mustDo = [];
+
+  todayEvents.forEach(e=>{
+    mustDo.push({ id:e.id, title:e.title, meta:(e.time||'今天')+' · '+subj(e.subject).name, done:e.done });
+  });
+
+  // 3 天内的事件，取最近 3 个作为"必做"
+  upcoming.filter(e=>daysUntil(e.date)<=3 && daysUntil(e.date)>0).slice(0,3).forEach(e=>{
+    const d = daysUntil(e.date);
+    mustDo.push({ id:e.id, title:'准备：'+e.title, meta:`还有 ${d} 天 · ${subj(e.subject).name}`, done:false });
+  });
+
+  if(mustDo.length===0){
+    mustDo.push({ id:'__empty', title:'今天没有硬性任务', meta:'点下面「+」加一条，或者去「学习计划」生成资料', done:false, ghost:true });
+  }
+
+  const top3 = mustDo.slice(0,3);
+
+  // 保底方案：取第一个未完成的
+  const first = top3.find(m=>!m.done);
+  const fallback = first
+    ? `如果今天实在没时间，只做这一件：<b>${esc(first.title)}</b>，10 分钟也算数。做完就睡，明天重启。`
+    : '今天的活儿都清了。去「学习计划」给明天备点料，或者干脆休息。';
+
+  // 倒计时
+  const chips = upcoming.slice(0,6).map(e=>{
+    const d = daysUntil(e.date);
+    const cls = d<=1?'chip urgent':'chip';
+    const label = d===0?'今天':d===1?'明天':`${d} 天后`;
+    return `<div class="${cls}"><span class="dot" style="background:${subj(e.subject).color}"></span>
+      ${esc(e.title)}<b>${label}</b></div>`;
+  }).join('') || '<div class="chip">暂无日程 <b>—</b></div>';
+
+  return `
+  <div class="hero">
+    <div class="hero-date">${now.getMonth()+1} 月 ${now.getDate()} 日 · ${weekdayCN(todayStr())} · ${greet}</div>
+    <div class="hero-head" id="heroHead">${top3.filter(m=>!m.done).length} 件事，不超过 2 小时</div>
+    <div class="hero-sub">先做第一件，别管其他。</div>
+
+    <div class="mustdo-list">
+      ${top3.map((m,i)=>`
+        <div class="mustdo ${m.done?'done':''}">
+          <div class="num">${i+1}</div>
+          <div class="txt"><div class="t1">${esc(m.title)}</div><div class="t2">${m.meta}</div></div>
+          <div class="chk ${m.done?'done':''}" onclick="toggleEvent('${m.id}')">✓</div>
+        </div>`).join('')}
+    </div>
+
+    <div class="fallback">
+      <div class="label">保底方案 · 崩了也能救</div>
+      <div class="body">${fallback}</div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div>
+      <div class="sec-h">倒计时 <span class="act" onclick="TAB='schedule';render()">全部 →</span></div>
+      <div class="chips">${chips}</div>
+
+      <div class="sec-h" style="margin-top:26px">本周节奏</div>
+      <div class="card">
+        ${weekRhythm()}
+      </div>
+    </div>
+
+    <div>
+      <div class="sec-h">备料状态 <span class="act" onclick="TAB='study';render()">去生成 →</span></div>
+      <div class="card">
+        ${packStatus()}
+      </div>
+    </div>
+  </div>`;
+}
+
+function weekRhythm(){
+  const rows = [];
+  for(let i=0;i<7;i++){
+    const d = new Date(); d.setDate(d.getDate()+i);
+    const ds = ymd(d);
+    const evs = DB.events.filter(e=>e.date===ds);
+    const label = i===0?'今天':i===1?'明天':weekdayCN(ds);
+    rows.push(`<div class="kv">
+      <span class="k">${label} <span style="opacity:.5">${ds.slice(5)}</span></span>
+      <span class="v" style="color:${evs.length?'var(--txt)':'var(--dim)'}">
+        ${evs.length? evs.map(e=>esc(e.title)).join('、') : '—'}
+      </span>
+    </div>`);
+  }
+  return rows.join('');
+}
+
+function packStatus(){
+  const counts = SUBJECTS.map(s=>{
+    const n = DB.packs.filter(p=>p.subject===s.id).length;
+    return `<div class="kv">
+      <span class="k"><span class="dot" style="display:inline-block;background:${s.color};margin-right:7px"></span>${s.name}</span>
+      <span class="v" style="color:${n?'var(--acc2)':'var(--dim)'}">${n? n+' 份' : '未备料'}</span>
+    </div>`;
+  }).join('');
+  return counts + `<div style="margin-top:14px"><button class="btn ghost sm" style="width:100%" onclick="openPackGenerator()">＋ 生成本周学习包</button></div>`;
+}
+
+function toggleEvent(id){
+  if(id.startsWith('__')) return;
+  const e = DB.events.find(x=>x.id===id);
+  if(!e) return;
+  e.done = !e.done;
+  if(e.done) toast('完成 ✓ 剩下一件一件来');
+  save(); render();
+}
+
+/* ---------- 日程 ---------- */
+function viewSchedule(){
+  const evs = [...DB.events].sort((a,b)=> a.date.localeCompare(b.date) || (a.time||'').localeCompare(b.time||''));
+  const list = evs.length ? evs.map(e=>{
+    const d = daysUntil(e.date);
+    const badge = e.done
+      ? '<span class="badge past">已完成</span>'
+      : d<0 ? '<span class="badge past">已过期</span>'
+      : d<=2 ? `<span class="badge soon">${d===0?'今天':d===1?'明天':d+'天后'}</span>`
+      : `<span class="badge">${d} 天后</span>`;
+    return `<div class="item">
+      <div class="subj-bar ${subj(e.subject).cls}"></div>
+      <div class="main2">
+        <div class="title" style="${e.done?'text-decoration:line-through;color:var(--dim)':''}">${esc(e.title)}</div>
+        <div class="meta">
+          <span>${e.date} ${weekdayCN(e.date)} ${e.time||''}</span>
+          <span>${subj(e.subject).name}</span>
+          ${badge}
+        </div>
+        ${e.note?`<div class="meta" style="margin-top:5px">${esc(e.note)}</div>`:''}
+      </div>
+      <button class="icon-btn" onclick="delEvent('${e.id}')" style="width:34px;height:34px;font-size:15px">✕</button>
+    </div>`;
+  }).join('') : `<div class="empty"><div class="big">▦</div><p>还没有日程</p><p class="hint">点右下角「＋ 新建」，把死线丢进来</p></div>`;
+
+  return `
+    <div class="sec-h">全部日程 <button class="btn sm" onclick="openEventForm()">＋ 新建</button></div>
+    ${list}
+    <div style="height:80px"></div>`;
+}
+
+/* ---------- 学习计划 ---------- */
+function viewStudy(){
+  const cards = SUBJECTS.map(s=>{
+    const packs = DB.packs.filter(p=>p.subject===s.id);
+    const weeks = packs.reduce((m,p)=>Math.max(m, p.week||0), 0);
+    return `<div class="card">
+      <div class="card-title">
+        <span><span class="dot" style="display:inline-block;background:${s.color};margin-right:8px"></span>${s.name}</span>
+        <span style="color:var(--dim);font-weight:500;font-size:12px">已生成 ${packs.length} 份</span>
+      </div>
+      <div class="kv"><span class="k">最高周次</span><span class="v">${weeks? '第 '+weeks+' 周':'—'}</span></div>
+      <div class="kv"><span class="k">下次备料</span><span class="v">第 ${weeks+1} 周</span></div>
+      <div class="progress-bar"><i style="width:${Math.min(100, packs.length*12)}%"></i></div>
+      <div style="margin-top:14px;display:flex;gap:9px">
+        <button class="btn ghost sm" style="flex:1" onclick="openPackGenerator('${s.id}')">生成第 ${weeks+1} 周</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  return `
+    <div class="sec-h">学习计划 <button class="btn sm" onclick="openPackGenerator()">＋ 备料</button></div>
+    <div class="card" style="background:rgba(79,140,255,.06);border-color:rgba(79,140,255,.25)">
+      <div style="font-size:14px;line-height:1.65;color:#b9caea">
+        <b style="color:var(--acc)">备料逻辑：</b>按「科目 · 周次 · 主题」生成
+        3 条核心知识点 + 10 道题（3 易 5 中 2 难）+ 错因分析 + 一句话易错点。
+        <br><span style="color:var(--dim)">不接 AI 也能用：会按内置模板出结构化的复习框架，你先填、后补。</span>
+      </div>
+    </div>
+    <div class="grid2">
+      <div>${cards}</div>
+      <div>
+        <div class="card">
+          <div class="card-title">AI 接入状态</div>
+          ${DB.settings.apiKey
+            ? `<div class="kv"><span class="k">状态</span><span class="v" style="color:var(--acc2)">已配置</span></div>
+               <div class="kv"><span class="k">模型</span><span class="v">${esc(DB.settings.model||'—')}</span></div>`
+            : `<div class="kv"><span class="k">状态</span><span class="v" style="color:var(--warn)">未配置（用模板模式）</span></div>`}
+          <div style="margin-top:14px">
+            <button class="btn ghost sm" style="width:100%" onclick="openSettings()">配置 AI（可选）</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="height:80px"></div>`;
+}
+
+/* ---------- 资料库 ---------- */
+let libFilter = 'all';
+function viewLibrary(){
+  const filtered = libFilter==='all' ? DB.packs : DB.packs.filter(p=>p.subject===libFilter);
+  const tabs = `<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+    <button class="btn sm ${libFilter==='all'?'':'ghost'}" onclick="libFilter='all';render()">全部</button>
+    ${SUBJECTS.map(s=>`<button class="btn sm ${libFilter===s.id?'':'ghost'}" onclick="libFilter='${s.id}';render()">${s.name}</button>`).join('')}
+  </div>`;
+
+  const list = filtered.length ? filtered.slice().reverse().map(p=>`
+    <div class="pack" onclick="openPack('${p.id}')">
+      <div class="pack-head">
+        <div class="subj-bar ${subj(p.subject).cls}" style="min-height:22px"></div>
+        <div>
+          <div class="pack-week">${subj(p.subject).name} · 第 ${p.week} 周</div>
+          <div class="pack-title">${esc(p.topic)}</div>
+        </div>
+      </div>
+      <div class="pack-desc">${(p.points||[]).length} 个知识点 · ${(p.questions||[]).length} 道题 ${p.pitfall?'· 有易错点':''}</div>
+    </div>`).join('')
+    : `<div class="empty"><div class="big">▤</div><p>资料库还是空的</p><p class="hint">去「学习计划」点备料，生成后会归档到这里</p></div>`;
+
+  return `<div class="sec-h">资料库 <button class="btn sm" onclick="openPackGenerator()">＋ 备料</button></div>${tabs}${list}<div style="height:80px"></div>`;
+}
+
+/* ============================================================
+   弹窗
+   ============================================================ */
+function openModal(html){
+  document.getElementById('modalBody').innerHTML = html;
+  document.getElementById('mask').classList.add('show');
+}
+function closeModal(){
+  document.getElementById('mask').classList.remove('show');
+}
+
+/* ---------- 新建日程 ---------- */
+function openEventForm(){
+  openModal(`
+    <h3>新建日程</h3>
+    <div class="field"><label>做什么</label><input id="f_title" placeholder="如：数学周测 / 化学实验报告"></div>
+    <div class="field"><label>科目</label>
+      <select id="f_subject">
+        ${SUBJECTS.map(s=>`<option value="${s.id}">${s.name}</option>`).join('')}
+        <option value="other">其他</option>
+      </select>
+    </div>
+    <div class="row">
+      <div class="field" style="flex:1.3"><label>日期</label><input id="f_date" type="date" value="${todayStr()}"></div>
+      <div class="field" style="flex:1"><label>时间（可空）</label><input id="f_time" type="time"></div>
+    </div>
+    <div class="field"><label>备注（可空）</label><textarea id="f_note" placeholder="范围、要带什么、老师要求……"></textarea></div>
+    <button class="btn" onclick="submitEvent()">保存</button>
+    <button class="btn ghost" style="margin-top:9px" onclick="closeModal()">取消</button>
+  `);
+}
+function submitEvent(){
+  const title = document.getElementById('f_title').value.trim();
+  const date = document.getElementById('f_date').value;
+  if(!title){ toast('写一下要做什么'); return; }
+  if(!date){ toast('选个日期'); return; }
+  const ev = {
+    id: uid(), title,
+    subject: document.getElementById('f_subject').value,
+    date,
+    time: document.getElementById('f_time').value,
+    note: document.getElementById('f_note').value.trim(),
+    done:false, createdAt: Date.now()
+  };
+  DB.events.push(ev);
+
+  // 交给系统闹钟，到点真的会弹通知
+  scheduleEventAlarms(ev);
+
+  save(); closeModal(); TAB='schedule'; render();
+  toast(hasNative() ? '已加入日程 · 到点会提醒你' : '已加入日程');
+}
+function delEvent(id){
+  if(!confirm('删除这条日程？')) return;
+  if(hasNative()){
+    try{ Native.cancelAlarm(id); Native.cancelAlarm(id+'_pre'); }catch(e){}
+  }
+  DB.events = DB.events.filter(e=>e.id!==id);
+  save(); render();
+}
+
+/* ---------- 生成学习包 ---------- */
+function openPackGenerator(preset){
+  const s = preset || 'math';
+  const weeks = DB.packs.filter(p=>p.subject===s).reduce((m,p)=>Math.max(m,p.week||0),0);
+  openModal(`
+    <h3>生成学习包</h3>
+    <div class="field"><label>科目</label>
+      <select id="g_subject" onchange="updateWeekSuggest()">
+        ${SUBJECTS.map(x=>`<option value="${x.id}" ${x.id===s?'selected':''}>${x.name}</option>`).join('')}
+      </select>
+    </div>
+    <div class="row">
+      <div class="field" style="flex:1"><label>周次</label><input id="g_week" type="number" min="1" value="${weeks+1}"></div>
+      <div class="field" style="flex:2"><label>主题 / 进度</label><input id="g_topic" placeholder="如：氧化还原反应"></div>
+    </div>
+    <div style="font-size:12.5px;color:var(--dim);margin-bottom:16px;line-height:1.6">
+      会生成：3 条核心知识点 · 10 道题（3易5中2难）· 错因 · 一句话易错点
+    </div>
+    <button class="btn" onclick="generatePack()">开始生成</button>
+    <button class="btn ghost" style="margin-top:9px" onclick="closeModal()">取消</button>
+  `);
+}
+function updateWeekSuggest(){
+  const s = document.getElementById('g_subject').value;
+  const w = DB.packs.filter(p=>p.subject===s).reduce((m,p)=>Math.max(m,p.week||0),0);
+  document.getElementById('g_week').value = w+1;
+}
+
+async function generatePack(){
+  const subject = document.getElementById('g_subject').value;
+  const week = parseInt(document.getElementById('g_week').value) || 1;
+  const topic = document.getElementById('g_topic').value.trim() || '本周复习';
+  const btn = event.target;
+  btn.textContent = '生成中…'; btn.disabled = true;
+
+  let pack;
+  if(DB.settings.apiKey && DB.settings.apiBase){
+    try{
+      pack = await aiGenerate(subject, week, topic);
+    }catch(err){
+      toast('AI 调用失败，改用模板模式');
+      pack = templatePack(subject, week, topic);
+    }
+  }else{
+    pack = templatePack(subject, week, topic);
+  }
+
+  pack.id = uid(); pack.createdAt = Date.now();
+  DB.packs.push(pack); save(); closeModal(); TAB='library'; render();
+  toast('已生成并归档');
+}
+
+/* 模板模式：不接 AI 也能用，给你一个可填的骨架子 */
+function templatePack(subject, week, topic){
+  const s = subj(subject);
+  const base = {
+    math: {
+      points: [`${topic} 的定义与适用条件`, `${topic} 的常用公式 / 变形`, `${topic} 的典型题型与解法套路`],
+      pitfall: '数学最容易错在「条件漏看」——先圈出题目里的取值范围，再动笔。'
+    },
+    chem: {
+      points: [`${topic} 的化学方程式与反应条件`, `${topic} 涉及的守恒关系（质量/电荷/电子）`, `${topic} 的实验现象与结论对应`],
+      pitfall: '化学最容易错在「方程式没配平就往下算」——先配平，再算量。'
+    },
+    bio: {
+      points: [`${topic} 的核心概念与结构`, `${topic} 的过程 / 流程梳理`, `${topic} 的常考对比与易混点`],
+      pitfall: '生物最容易错在「概念混淆」——把相近的两个名词列成表格对比，别硬背。'
+    }
+  }[subject] || { points:['核心概念','关键过程','常考题型'], pitfall:'先看题目在问什么，别急着套公式。' };
+
+  const mkQ = (i, lv) => ({
+    q: `[${lv}] 关于「${topic}」的第 ${i} 题：请在此补充题目（模板模式）`,
+    level: lv,
+    a: '（待填）',
+    why: '（待补充错因：写下"我当时为什么会选这个"）'
+  });
+
+  return {
+    subject, week, topic,
+    points: base.points,
+    questions: [
+      ...[1,2,3].map(i=>mkQ(i,'易')),
+      ...[4,5,6,7,8].map(i=>mkQ(i,'中')),
+      ...[9,10].map(i=>mkQ(i,'难')),
+    ],
+    pitfall: base.pitfall,
+    source: '模板生成 · 未接 AI'
+  };
+}
+
+/* AI 模式：兼容 OpenAI 格式（DeepSeek / 通义 / 智谱 都是这个协议） */
+async function aiGenerate(subject, week, topic){
+  const s = subj(subject);
+  const prompt = `你是${s.name}老师。为"第${week}周 · ${topic}"生成一份学习包。
+严格输出 JSON，不要任何解释文字，格式：
+{"points":["知识点1","知识点2","知识点3"],
+ "questions":[{"q":"题干","level":"易","a":"答案","why":"学生为什么会错"}],
+ "pitfall":"一句话易错点"}
+要求：questions 必须有 10 道，3易5中2难；why 要写"为什么你会选错"，不是复述答案。`;
+
+  const res = await fetch(DB.settings.apiBase.replace(/\/$/,'') + '/chat/completions', {
+    method:'POST',
+    headers:{
+      'Content-Type':'application/json',
+      'Authorization':'Bearer ' + DB.settings.apiKey
+    },
+    body: JSON.stringify({
+      model: DB.settings.model || 'deepseek-chat',
+      messages:[{role:'user', content:prompt}],
+      temperature: 0.7,
+      response_format: { type:'json_object' }
+    })
+  });
+  if(!res.ok) throw new Error('HTTP '+res.status);
+  const j = await res.json();
+  let txt = j.choices?.[0]?.message?.content || '{}';
+  txt = txt.replace(/^```json\s*/,'').replace(/```$/,'').trim();
+  const p = JSON.parse(txt);
+  return {
+    subject, week, topic,
+    points: p.points || [],
+    questions: p.questions || [],
+    pitfall: p.pitfall || '',
+    source: 'AI · ' + (DB.settings.model||'')
+  };
+}
+
+/* ---------- 查看学习包 ---------- */
+function openPack(id){
+  const p = DB.packs.find(x=>x.id===id);
+  if(!p) return;
+  const qs = (p.questions||[]).map((q,i)=>`
+    <div style="padding:12px 0;border-bottom:1px solid var(--line)">
+      <div style="font-size:14.5px;line-height:1.6">
+        <span class="badge" style="margin-right:8px">${esc(q.level||'')}</span>${esc(q.q)}
+      </div>
+      <details style="margin-top:8px">
+        <summary style="font-size:13px;color:var(--acc);cursor:pointer">看答案与错因</summary>
+        <div style="font-size:13.5px;color:var(--dim);margin-top:8px;line-height:1.65">
+          <div><b style="color:var(--txt)">答案：</b>${esc(q.a)}</div>
+          <div style="margin-top:5px"><b style="color:var(--warn)">为什么错：</b>${esc(q.why)}</div>
+        </div>
+      </details>
+    </div>`).join('');
+
+  openModal(`
+    <h3>${esc(p.topic)}</h3>
+    <div style="font-size:13px;color:var(--dim);margin-bottom:18px">${subj(p.subject).name} · 第 ${p.week} 周 · ${esc(p.source||'')}</div>
+
+    <div class="card-title">核心知识点</div>
+    ${(p.points||[]).map((x,i)=>`<div class="kv"><span class="k" style="flex:0 0 auto;margin-right:10px">${i+1}</span><span class="v" style="text-align:right;font-weight:500">${esc(x)}</span></div>`).join('')}
+
+    <div class="card-title" style="margin-top:22px">10 道题</div>
+    ${qs}
+
+    ${p.pitfall?`<div class="fallback" style="margin-top:16px">
+      <div class="label">易错 TOP 1</div>
+      <div class="body">${esc(p.pitfall)}</div>
+    </div>`:''}
+
+    <button class="btn ghost" style="margin-top:18px" onclick="delPack('${p.id}')">删除这个包</button>
+    <button class="btn" style="margin-top:9px" onclick="closeModal()">关了</button>
+  `);
+}
+function delPack(id){
+  if(!confirm('删除？')) return;
+  DB.packs = DB.packs.filter(p=>p.id!==id);
+  save(); closeModal(); render();
+}
+
+/* ---------- 设置 ---------- */
+function openSettings(){
+  openModal(`
+    <h3>设置</h3>
+
+    <div class="card-title">提醒</div>
+    <div class="kv"><span class="k">运行方式</span><span class="v">${hasNative()? '原生 App · 系统闹钟' : '浏览器预览模式'}</span></div>
+    <div class="kv"><span class="k">提醒策略</span><span class="v">提前 30 分钟 + 到点</span></div>
+    ${hasNative()? `
+    <div style="display:flex;gap:9px;margin:14px 0 4px">
+      <button class="btn ghost sm" style="flex:1" onclick="Native.requestNotifPermission();toast('请在系统弹窗里点允许')">授权通知</button>
+      <button class="btn ghost sm" style="flex:1" onclick="Native.testNotification()">测试通知</button>
+    </div>
+    <button class="btn ghost sm" style="width:100%;margin-top:9px" onclick="rescheduleAll();save();toast('已重排所有提醒')">重排所有提醒</button>
+    <div style="font-size:12.5px;color:var(--dim);line-height:1.7;margin-top:12px">
+      如果到点没响，去系统设置里给「学习管家」放开：<br>
+      ① 通知权限 ② 允许后台运行 / 电池不优化 ③ 自启动（vivo 需要单独开）
+    </div>` : `
+    <div style="font-size:12.5px;color:var(--warn);line-height:1.7;margin:12px 0">
+      当前是浏览器预览，没有系统通知能力。装成 APK 后才会到点真的响。
+    </div>`}
+
+    <div class="card-title" style="margin-top:26px">AI 接入（可选，不填也能用）</div>
+    <div class="field"><label>接口地址（Base URL）</label>
+      <input id="s_base" placeholder="https://api.deepseek.com/v1" value="${esc(DB.settings.apiBase||'')}"></div>
+    <div class="field"><label>API Key</label>
+      <input id="s_key" type="password" placeholder="sk-..." value="${esc(DB.settings.apiKey||'')}"></div>
+    <div class="field"><label>模型名</label>
+      <input id="s_model" placeholder="deepseek-chat" value="${esc(DB.settings.model||'')}"></div>
+
+    <div style="font-size:12.5px;color:var(--dim);line-height:1.7;margin-bottom:18px">
+      常用配置：<br>
+      · DeepSeek → <code>https://api.deepseek.com/v1</code> · <code>deepseek-chat</code><br>
+      · 通义千问 → <code>https://dashscope.aliyuncs.com/compatible-mode/v1</code> · <code>qwen-plus</code><br>
+      · 本地 llama.cpp → <code>http://127.0.0.1:8080/v1</code> · 模型名随意<br>
+      Key 只存在你本机，不会上传到任何地方。
+    </div>
+
+    <button class="btn" onclick="saveSettings()">保存</button>
+
+    <div class="card-title" style="margin-top:26px">数据</div>
+    <div class="kv"><span class="k">日程</span><span class="v">${DB.events.length} 条</span></div>
+    <div class="kv"><span class="k">学习包</span><span class="v">${DB.packs.length} 份</span></div>
+    <div style="display:flex;gap:9px;margin-top:16px">
+      <button class="btn ghost sm" style="flex:1" onclick="exportData()">导出备份</button>
+      <button class="btn ghost sm" style="flex:1" onclick="importData()">导入备份</button>
+    </div>
+    <button class="btn danger" style="margin-top:12px" onclick="clearAll()">清空所有数据</button>
+    <button class="btn ghost" style="margin-top:9px" onclick="closeModal()">关闭</button>
+  `);
+}
+function saveSettings(){
+  DB.settings.apiBase = document.getElementById('s_base').value.trim();
+  DB.settings.apiKey = document.getElementById('s_key').value.trim();
+  DB.settings.model = document.getElementById('s_model').value.trim();
+  save(); closeModal(); render();
+  toast(DB.settings.apiKey ? 'AI 已配置' : '已保存（模板模式）');
+}
+function exportData(){
+  const blob = new Blob([JSON.stringify(DB,null,2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `学习管家备份_${todayStr()}.json`;
+  a.click();
+  toast('已导出');
+}
+function importData(){
+  const inp = document.createElement('input');
+  inp.type='file'; inp.accept='.json';
+  inp.onchange = e=>{
+    const f = e.target.files[0]; if(!f) return;
+    const r = new FileReader();
+    r.onload = ()=>{
+      try{
+        const d = JSON.parse(r.result);
+        DB = { ...defaultData(), ...d, settings:{...defaultData().settings, ...(d.settings||{})} };
+        save(); rescheduleAll(); save(); closeModal(); render(); toast('导入成功，提醒已重排');
+      }catch(err){ toast('文件格式不对'); }
+    };
+    r.readAsText(f);
+  };
+  inp.click();
+}
+function clearAll(){
+  if(!confirm('清空所有数据？建议先导出备份。')) return;
+  DB = defaultData(); save(); closeModal(); render(); toast('已清空');
+}
+
+/* ---------- 启动 ---------- */
+applyLayout();
+render();
+
+// 首次使用引导
+if(!DB.events.length && !DB.packs.length){
+  setTimeout(()=>{
+    openModal(`
+      <h3>欢迎，这是你自己的学习管家</h3>
+      <div style="font-size:14px;line-height:1.75;color:#c3cbdb">
+        它只有三件本事：<br><br>
+        <b style="color:var(--acc)">1. 今天做三件</b> — 打开就看到，不用翻计划表<br>
+        <b style="color:var(--acc)">2. 崩了能救</b> — 每天给一个"10 分钟保底方案"<br>
+        <b style="color:var(--acc)">3. 提前备料</b> — 按数学/化学/生物的周次生成知识点和题<br><br>
+        <span style="color:var(--dim);font-size:13px">数据全存这台设备上，断网也能用，随时能导出带走。</span>
+      </div>
+      <button class="btn" style="margin-top:22px" onclick="closeModal();openEventForm()">加第一条日程</button>
+      <button class="btn ghost" style="margin-top:9px" onclick="closeModal()">先随便看看</button>
+    `);
+  }, 400);
+}
+</script>
+</body>
+</html>

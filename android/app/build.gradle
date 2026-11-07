@@ -1,0 +1,38 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.studybutler.app'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.studybutler.app"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    // 关掉所有关于 Google 服务的依赖检查
+    buildFeatures {
+        buildConfig false
+    }
+}
+
+dependencies {
+    // 刻意不引入任何 com.google.* / androidx.* 依赖
+    // 全部用 Android 原生 API，包体极小、无外部服务
+}
