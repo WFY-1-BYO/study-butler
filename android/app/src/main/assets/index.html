@@ -669,7 +669,10 @@ function viewLibrary(){
         <div style="flex:1;min-width:0">
           <div style="font-size:13.5px;line-height:1.6;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden">${esc(g.preview || '（纯图片，没有文字层）')}</div>
           <div class="pack-desc" style="margin-top:6px">${new Date(g.time).toLocaleString('zh-CN')} · ${Math.round(g.size/1024)} KB</div>
-          <button class="btn ghost sm" style="margin-top:8px" onclick="delGrabbed('${g.file}')">删除</button>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button class="btn sm" onclick="tidyGrabbed('${g.file}')">整理成文档</button>
+            <button class="btn ghost sm" onclick="delGrabbed('${g.file}')">删除</button>
+          </div>
         </div>
       </div>
     </div>`).join('')
@@ -715,6 +718,136 @@ function delGrabbed(name){
   toast('已删除');
 }
 function onGrabbed(){ if(TAB==='library') render(); }
+
+/* ---------- 把收到的网页文字整理成文档（本地解析，不花钱不联网） ---------- */
+function tidyGrabbed(file){
+  let raw = '';
+  try{ if(window.Native && Native.readGrabbed) raw = Native.readGrabbed(file) || ''; }catch(e){ raw = ''; }
+  if(!raw){ toast('这条没有文字层，整页可能是图片，需要 OCR'); return; }
+
+  const doc = parseQuestions(raw);
+  if(!doc.questions.length){
+    // 没认出题目：退化成纯文本整理
+    const plain = cleanPlain(raw);
+    if(!plain){ toast('这篇没提取到可用文字'); return; }
+    openModal(`<h3>整理结果</h3>
+      <div style="font-size:12.5px;color:var(--dim);margin-bottom:10px">没认出题号结构，已按段落整理，共 ${plain.split('\n').length} 段</div>
+      <div style="max-height:64vh;overflow:auto;line-height:1.75;font-size:14px;white-space:pre-wrap">${esc(plain)}</div>
+      <button class="btn ghost" onclick="closeModal()">关闭</button>`);
+    return;
+  }
+
+  const q = doc.questions;
+  const withAnswer = q.filter(x=>x.answer).length;
+  const withOpts = q.filter(x=>x.options.length>=2).length;
+
+  const body = q.map(x=>`
+    <div style="margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid var(--line)">
+      <div style="font-weight:600;line-height:1.65;margin-bottom:7px">${x.no}. ${esc(x.stem)}</div>
+      ${x.options.length ? `<div style="margin-left:12px;line-height:1.9">${x.options.map(o=>`<div><b>${o.k}.</b> ${esc(o.v)}</div>`).join('')}</div>` : ''}
+      ${x.answer ? `<div style="margin-top:8px;color:#22c55e;font-size:13.5px">答案：${esc(x.answer)}</div>` : ''}
+      ${x.analysis ? `<div style="margin-top:4px;color:var(--dim);font-size:12.5px;line-height:1.6">${esc(x.analysis)}</div>` : ''}
+    </div>`).join('');
+
+  openModal(`<h3>整理好了 · ${q.length} 道题</h3>
+    <div style="font-size:12.5px;color:var(--dim);margin-bottom:14px">
+      带选项 ${withOpts} 道 · 带答案 ${withAnswer} 道${withAnswer===0?' · ⚠️ 没找到答案，可能要再往下收一屏':''}
+    </div>
+    <div style="max-height:62vh;overflow:auto;padding-right:4px">${body}</div>
+    <button class="btn ghost" onclick="closeModal()">关闭</button>`);
+}
+
+/** 从一段网页文字里切出题目 */
+function parseQuestions(raw){
+  let body = raw;
+  const sep = body.indexOf('\n\n');
+  if(sep >= 0 && sep < 800) body = body.slice(sep + 2);   // 去掉第一行来源网址
+
+  let lines = body.split(/\r?\n/)
+    .map(l=>l.replace(/\u00a0/g,' ').replace(/[ \t]{2,}/g,' ').trim())
+    .filter(l=>l.length > 1);
+
+  const NOISE = /^(首页|登录|注册|免费下载|立即下载|下载|收藏|分享|评论|上一篇|下一篇|更多|展开|收起|查看全部|返回|搜索|热门推荐|相关推荐|版权|免责声明|版权所有|上一页|下一页|点击查看|查看详情|广告)$/;
+  const NOISE2 = /(更多.{0,6}访问|请访问|关注.{0,4}公众号|扫码|下载APP|客服|联系我们|未经授权|转载请注明|本站|温馨提示)/;
+  lines = lines.filter(l=>!NOISE.test(l) && !NOISE2.test(l));
+
+  // 大题分隔行：一、选择题 / 二、填空题 —— 遇到就把当前题结束，避免后续内容串到上一题
+  const RE_SEC = /^[一二三四五六七八九十]{1,3}\s*[、．.]\s*\S/;
+
+  const RE_Q   = /^(?:第\s*)?(\d{1,3})\s*[．.、)）:：]\s*(.+)$/;
+  const RE_Q2  = /^[（(](\d{1,3})[）)]\s*(.+)$/;
+  const RE_OPT = /^([A-H])\s*[．.、)）]\s*(.+)$/;
+  const RE_ANS = /^(?:【?答案】?|参考答案|【?解析】?|【?分析】?)\s*[:：]?\s*(.*)$/;
+
+  const qs = [];
+  let cur = null, inAns = false;
+
+  for(let i=0;i<lines.length;i++){
+    const L = lines[i];
+
+    // 遇到"二、填空题"这类大题标题，收尾当前题
+    if(RE_SEC.test(L)){
+      cur = null;
+      inAns = false;
+      continue;
+    }
+
+    let m = L.match(RE_Q) || L.match(RE_Q2);
+
+    if(m){
+      const no = parseInt(m[1],10);
+      const okNum = no > 0 && no <= 200;
+      const seq = !cur || no === cur.no + 1 || no === 1;
+      if(okNum && seq){
+        cur = { no, stem:(m[2]||'').trim(), options:[], answer:'', analysis:'' };
+        qs.push(cur);
+        inAns = false;
+        continue;
+      }
+    }
+
+    if(!cur) continue;
+
+    if(RE_ANS.test(L)){
+      m = L.match(RE_ANS);
+      const v = (m && m[1] ? m[1] : '').trim();
+      if(/答案/.test(L)) cur.answer = v;
+      else cur.analysis = v;
+      inAns = true;
+      continue;
+    }
+
+    m = L.match(RE_OPT);
+    if(m){
+      cur.options.push({ k:m[1], v:(m[2]||'').trim() });
+      continue;
+    }
+
+    // 续行：答案区接答案，选项区接选项，否则接题干（都设上限，防止页面其他内容串进来）
+    if(inAns || cur.answer){
+      if(cur.analysis.length < 500) cur.analysis += (cur.analysis?' ':'') + L;
+    }else if(cur.options.length){
+      const last = cur.options[cur.options.length-1];
+      if(last.v.length < 200) last.v += ' ' + L;
+    }else{
+      if(cur.stem.length < 600) cur.stem += (cur.stem?' ':'') + L;
+    }
+  }
+
+  const out = qs.filter(q=>q.stem && q.stem.length>3 && q.no<=200);
+  return { questions: out, total: qs.length };
+}
+
+/** 认不出题号时的兜底：按段落清一遍 */
+function cleanPlain(raw){
+  let body = raw;
+  const sep = body.indexOf('\n\n');
+  if(sep >= 0 && sep < 800) body = body.slice(sep + 2);
+  return body.split(/\r?\n/)
+    .map(l=>l.trim())
+    .filter(l=>l.length>1)
+    .join('\n');
+}
 
 /* ============================================================
    弹窗

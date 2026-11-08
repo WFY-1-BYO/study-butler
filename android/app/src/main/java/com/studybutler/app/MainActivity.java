@@ -317,6 +317,25 @@ public class MainActivity extends Activity {
             return arr.toString();
         }
 
+        /** 读一条已收资料的文字层，用来整理成文档 */
+        @JavascriptInterface
+        public String readGrabbed(String fileName) {
+            try {
+                java.io.File dir = new java.io.File(getFilesDir(), "grabbed");
+                String base = fileName.contains(".")
+                        ? fileName.substring(0, fileName.lastIndexOf('.')) : fileName;
+                java.io.File txt = new java.io.File(dir, base + ".txt");
+                if (!txt.exists()) return "";
+                byte[] buf = new byte[(int) txt.length()];
+                java.io.FileInputStream in = new java.io.FileInputStream(txt);
+                int len = in.read(buf);
+                in.close();
+                return len > 0 ? new String(buf, 0, len, "UTF-8") : "";
+            } catch (Throwable e) {
+                return "";
+            }
+        }
+
         /** 删掉一条已收的资料 */
         @JavascriptInterface
         public void deleteGrabbed(String fileName) {
