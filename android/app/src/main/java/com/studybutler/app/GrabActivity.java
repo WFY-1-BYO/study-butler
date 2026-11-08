@@ -166,19 +166,55 @@ public class GrabActivity extends Activity {
     private void doCapture() {
         Toast.makeText(this, "正在收…", Toast.LENGTH_SHORT).show();
 
-        web.evaluateJavascript(
-                "(function(){try{var t=document.body.innerText||'';return t.slice(0,60000)}catch(e){return ''}})()",
-                textJson -> {
-                    String text = "";
-                    try {
-                        text = new org.json.JSONTokener(textJson).nextValue().toString();
-                    } catch (Exception ignored) {
-                    }
-                    shoot(text);
-                });
+        // 取「标题 + 正文」，不再拿整页 innerText：
+        // 整页 innerText 开头是导航栏，资料库标题会变成一坨导航词
+        String js =
+                "(function(){try{" +
+                "var title='';" +
+                "var h1=document.querySelector('h1');" +
+                "if(h1&&h1.innerText&&h1.innerText.trim().length>2){title=h1.innerText.trim();}" +
+                "if(!title){" +
+                "  var t=document.title||'';" +
+                "  var parts=t.split(/[-_|—｜]/);" +
+                "  for(var i=0;i<parts.length;i++){" +
+                "    var p=parts[i].trim();" +
+                "    if(p.length>4&&!/学科网|zxxk/i.test(p)){title=p;break;}" +
+                "  }" +
+                "}" +
+                "var best='',bestScore=0;" +
+                "var cand=['article','main','#content','.content','.detail','.detail-content','.article-content','.text','.con','.main'];"
+                +
+                "for(var ci=0;ci<cand.length;ci++){" +
+                "  var els=document.querySelectorAll(cand[ci]);" +
+                "  for(var ei=0;ei<els.length;ei++){" +
+                "    var el=els[ei];" +
+                "    var txt=(el.innerText||'').trim();" +
+                "    if(txt.length<200) continue;" +
+                "    var aLen=0,as=el.querySelectorAll('a');" +
+                "    for(var ai=0;ai<as.length;ai++){aLen+=(as[ai].innerText||'').length;}" +
+                "    var score=txt.length-2*aLen;" +   // 链接越多越不像正文
+                "    if(score>bestScore){bestScore=score;best=txt;}" +
+                "  }" +
+                "}" +
+                "var body=best||(document.body.innerText||'');" +
+                "return JSON.stringify({title:title,text:body.slice(0,60000)});" +
+                "}catch(e){return JSON.stringify({title:'',text:''})}})()";
+
+        web.evaluateJavascript(js, outer -> {
+            String title = "";
+            String text = "";
+            try {
+                String inner = new org.json.JSONTokener(outer).nextValue().toString();
+                org.json.JSONObject o = new org.json.JSONObject(inner);
+                title = o.optString("title", "");
+                text = o.optString("text", "");
+            } catch (Exception ignored) {
+            }
+            shoot(title, text);
+        });
     }
 
-    private void shoot(String text) {
+    private void shoot(String title, String text) {
         // capturePicture 需要软件层渲染，否则拿到空白
         web.setLayerType(View.LAYER_TYPE_SOFTWARE, null);
         web.postDelayed(() -> {
@@ -217,11 +253,11 @@ public class GrabActivity extends Activity {
                 return;
             }
 
-            save(bmp, text);
+            save(bmp, title, text);
         }, 400);
     }
 
-    private void save(Bitmap bmp, String text) {
+    private void save(Bitmap bmp, String title, String text) {
         try {
             File dir = new File(getFilesDir(), "grabbed");
             if (!dir.exists()) dir.mkdirs();
@@ -237,7 +273,12 @@ public class GrabActivity extends Activity {
 
             File txt = new File(dir, base + ".txt");
             FileOutputStream tf = new FileOutputStream(txt);
-            tf.write((web.getUrl() + "\n\n" + (text == null ? "" : text)).getBytes("UTF-8"));
+            String head = web.getUrl() + "\n";
+            if (title != null && title.trim().length() > 0) {
+                head += "#TITLE#" + title.trim().replace("\n", " ") + "\n";
+            }
+            head += "\n";
+            tf.write((head + (text == null ? "" : text)).getBytes("UTF-8"));
             tf.close();
 
             // 记录来源网址，方便回溯

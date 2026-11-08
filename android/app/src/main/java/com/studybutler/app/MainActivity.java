@@ -306,7 +306,7 @@ public class MainActivity extends Activity {
                     o.put("time", f.lastModified());
 
                     String base = n.substring(0, n.lastIndexOf('.'));
-                    String preview = readHead(new java.io.File(dir, base + ".txt"), 160);
+                    String preview = previewOf(new java.io.File(dir, base + ".txt"), 160);
                     o.put("preview", preview);
                     o.put("source", readHead(new java.io.File(dir, base + ".url"), 300)
                             .replace("\n", " ").trim());
@@ -349,6 +349,41 @@ public class MainActivity extends Activity {
                 new java.io.File(dir, base + ".url").delete();
             } catch (Throwable ignored) {
             }
+        }
+    }
+
+    /**
+     * 资料库列表上的标题。
+     * 优先用抓取时存下的页面标题（#TITLE#），其次正文第一行；
+     * 绝不把导航栏文字（"首页 登录 会员 上传…"）当成标题。
+     */
+    private static String previewOf(java.io.File f, int max) {
+        try {
+            if (!f.exists()) return "";
+            byte[] buf = new byte[2048];
+            java.io.FileInputStream in = new java.io.FileInputStream(f);
+            int len = in.read(buf);
+            in.close();
+            if (len <= 0) return "";
+
+            String s = new String(buf, 0, len, "UTF-8");
+            String[] ls = s.split("\n");
+            String title = "", first = "";
+            for (String raw : ls) {
+                String l = raw.trim();
+                if (l.isEmpty()) continue;
+                if (l.startsWith("http")) continue;
+                if (l.startsWith("#TITLE#")) {
+                    title = l.substring(7).trim();
+                    continue;
+                }
+                if (first.isEmpty() && l.length() > 4) first = l;
+            }
+            String out = !title.isEmpty() ? title : first;
+            out = out.replaceAll("\\s+", " ").trim();
+            return out.length() > max ? out.substring(0, max) : out;
+        } catch (Throwable e) {
+            return "";
         }
     }
 

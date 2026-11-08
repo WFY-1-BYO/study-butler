@@ -10,8 +10,8 @@ android {
         applicationId "com.studybutler.app"
         minSdk 24
         targetSdk 34
-        versionCode 2
-        versionName "1.2"
+        versionCode 3
+        versionName "1.3"
     }
 
     buildTypes {
@@ -35,4 +35,15 @@ android {
 dependencies {
     // 刻意不引入任何 com.google.* / androidx.* 依赖
     // 全部用 Android 原生 API，包体极小、无外部服务
+}
+
+// 每次构建前把根目录的 index.html 同步进 assets，
+// 避免改了页面却打出旧版本的包（v1.2 就踩过这个坑）
+tasks.register('syncWeb', Copy) {
+    from rootProject.projectDir.toPath().resolve('..').resolve('index.html').toFile()
+    into 'src/main/assets'
+}
+
+tasks.configureEach { t ->
+    if (t.name == 'preBuild') t.dependsOn 'syncWeb'
 }

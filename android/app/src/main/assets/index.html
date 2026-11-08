@@ -726,6 +726,19 @@ function tidyGrabbed(file){
   if(!raw){ toast('这条没有文字层，整页可能是图片，需要 OCR'); return; }
 
   const doc = parseQuestions(raw);
+
+  if(doc.listPage){
+    openModal(`<h3>这是一页资料列表，不是题目</h3>
+      <div style="font-size:13.5px;line-height:1.8;color:var(--dim);margin-bottom:14px">
+        这一页上有 ${doc.materialLines} 行是「资料的标题」（比如「XX课件-2024-2025学年…必修第一册」），
+        不是试卷正文。硬整理只会得到一坨导航文字。<br><br>
+        正确做法：<b style="color:var(--fg)">点进任意一份资料</b>，等正文和题目出来，
+        再点右下角「收进来」。
+      </div>
+      <button class="btn ghost" onclick="closeModal()">知道了</button>`);
+    return;
+  }
+
   if(!doc.questions.length){
     // 没认出题目：退化成纯文本整理
     const plain = cleanPlain(raw);
@@ -757,6 +770,19 @@ function tidyGrabbed(file){
     <button class="btn ghost" onclick="closeModal()">关闭</button>`);
 }
 
+/** 资料列表页/搜索结果页那一行（是"资料的标题"，不是题目） */
+function isMaterialLine(l){
+  if(!l || l.length < 8) return false;
+  // 「XX课件-2024-2025学年高一上学期数学人教A版必修第一册」这类
+  const grade = /(学年|学期|年级|必修|选择性必修|人教|北师大|苏教|沪教|湘教|外研|高考|期中|期末)/;
+  const kind  = /(课件|教案|学案|导学案|试卷|测试卷|模拟卷|练习|专项|知识点|讲义|微课|视频|素材|试题|真题)/;
+  const mark  = /(\d{4}\s*[-—~]\s*\d{4}\s*学年|20\d\d[-年]\d{1,2}[-月]\d{1,2}.*发布|下载券|普通用户|VIP|立即下载|免费下载|收藏|浏览|分享)/;
+  if(grade.test(l) && kind.test(l)) return true;
+  if(mark.test(l)) return true;
+  if(l.length > 40 && /学年/.test(l) && /(册|卷|课件|试题)/.test(l)) return true;
+  return false;
+}
+
 /** 从一段网页文字里切出题目 */
 function parseQuestions(raw){
   let body = raw;
@@ -769,7 +795,17 @@ function parseQuestions(raw){
 
   const NOISE = /^(首页|登录|注册|免费下载|立即下载|下载|收藏|分享|评论|上一篇|下一篇|更多|展开|收起|查看全部|返回|搜索|热门推荐|相关推荐|版权|免责声明|版权所有|上一页|下一页|点击查看|查看详情|广告)$/;
   const NOISE2 = /(更多.{0,6}访问|请访问|关注.{0,4}公众号|扫码|下载APP|客服|联系我们|未经授权|转载请注明|本站|温馨提示)/;
-  lines = lines.filter(l=>!NOISE.test(l) && !NOISE2.test(l));
+  lines = lines.filter(l=>!l.startsWith('#TITLE#') && !NOISE.test(l) && !NOISE2.test(l));
+
+  // 先判断这是不是一页"资料列表"：列表页上一行一个资料名，硬当题目解会出一坨垃圾
+  const materialLines = lines.filter(isMaterialLine).length;
+  const NAVWORDS = /(首页|登录|注册|会员|上传|搜索|关注|公众号|客服|联系我们|版权|免责声明|网站导航|帮助中心|APP下载|网校通|研修|备课|组卷|收藏|分享|评论)/g;
+  const navHits = (body.match(NAVWORDS) || []).length;
+  const listPage = (materialLines >= 3 && (materialLines >= 4 || materialLines / Math.max(1, lines.length) > 0.2))
+                 || (navHits >= 8 && materialLines >= 1);
+  if(listPage){
+    return { questions: [], total: 0, listPage: true, materialLines, navHits };
+  }
 
   // 大题分隔行：一、选择题 / 二、填空题 —— 遇到就把当前题结束，避免后续内容串到上一题
   const RE_SEC = /^[一二三四五六七八九十]{1,3}\s*[、．.]\s*\S/;
@@ -796,6 +832,10 @@ function parseQuestions(raw){
 
     if(m){
       const no = parseInt(m[1],10);
+      const rest = (m[2] || '').trim();
+      // 「4.1.1二次根式…」是章节编号，不是第 4 题
+      if(/^\d+\s*[.．、]/.test(rest)) continue;
+      if(isMaterialLine(L)) continue;
       const okNum = no > 0 && no <= 200;
       const seq = !cur || no === cur.no + 1 || no === 1;
       if(okNum && seq){
@@ -834,8 +874,14 @@ function parseQuestions(raw){
     }
   }
 
-  const out = qs.filter(q=>q.stem && q.stem.length>3 && q.no<=200);
-  return { questions: out, total: qs.length };
+  const out = qs.filter(q=>{
+    if(!q.stem || q.stem.length <= 3 || q.no > 200) return false;
+    if(q.stem.length > 320) return false;                       // 题干串行了，不是真题干
+    if(isMaterialLine(q.stem)) return false;                     // 串进了资料标题
+    if((q.stem.match(/学年/g) || []).length >= 2) return false;   // 两个学年号必然不是题目
+    return true;
+  });
+  return { questions: out, total: qs.length, listPage: false, materialLines };
 }
 
 /** 认不出题号时的兜底：按段落清一遍 */
