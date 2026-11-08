@@ -18,29 +18,35 @@ public class AlarmReceiver extends BroadcastReceiver {
         if (title == null) title = "学习提醒";
         if (body == null) body = "该做下一件事了";
 
-        NotificationHelper.show(ctx, title, body, title.hashCode());
+        // 到点提醒用"强提醒"：横幅 + 锁屏可见 + 震动
+        NotificationHelper.show(ctx, title, body, title.hashCode(), true);
 
-        // 震动
         try {
             android.os.Vibrator v = (android.os.Vibrator)
                     ctx.getSystemService(Context.VIBRATOR_SERVICE);
             if (v != null) {
                 if (Build.VERSION.SDK_INT >= 26) {
-                    v.vibrate(android.os.VibrationEffect.createOneShot(
-                            400, android.os.VibrationEffect.DEFAULT_AMPLITUDE));
+                    v.vibrate(android.os.VibrationEffect.createWaveform(
+                            new long[]{0, 400, 200, 400}, -1));
                 } else {
-                    v.vibrate(400);
+                    v.vibrate(new long[]{0, 400, 200, 400}, -1);
                 }
             }
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
     }
 }
 
 /** 共用的通知发送逻辑 */
 class NotificationHelper {
-    static void show(Context ctx, String title, String body, int id) {
+
+    /** 渠道 id，和 MainActivity.createChannels() 里保持一致 */
+    static final String CHANNEL = "study_alarm_v1";
+
+    static void show(Context ctx, String title, String body, int id, boolean strong) {
         NotificationManager nm = (NotificationManager)
                 ctx.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm == null) return;
 
         Intent open = new Intent(ctx, MainActivity.class);
         open.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
@@ -50,7 +56,7 @@ class NotificationHelper {
 
         Notification.Builder b;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            b = new Notification.Builder(ctx, "study_reminder");
+            b = new Notification.Builder(ctx, CHANNEL);
         } else {
             b = new Notification.Builder(ctx);
         }
@@ -59,11 +65,31 @@ class NotificationHelper {
                 .setContentText(body)
                 .setSmallIcon(android.R.drawable.ic_popup_reminder)
                 .setStyle(new Notification.BigTextStyle().bigText(body))
-                .setPriority(Notification.PRIORITY_HIGH)
-                .setDefaults(Notification.DEFAULT_ALL)
                 .setContentIntent(pi)
-                .setAutoCancel(true);
+                .setAutoCancel(true)
+                .setShowWhen(true)
+                .setWhen(System.currentTimeMillis());
 
-        nm.notify(id, b.build());
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            b.setVisibility(Notification.VISIBILITY_PUBLIC);   // 锁屏上也能看到内容
+            b.setCategory(Notification.CATEGORY_ALARM);       // 归类为闹钟类，优先级更高
+        }
+
+        if (strong) {
+            // 强提醒：锁屏也会亮屏弹出。系统若不允许，仍会退回横幅通知，不会丢失
+            b.setPriority(Notification.PRIORITY_MAX);
+            b.setDefaults(Notification.DEFAULT_ALL);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                b.setFullScreenIntent(pi, true);
+            }
+        } else {
+            b.setPriority(Notification.PRIORITY_HIGH);
+            b.setDefaults(Notification.DEFAULT_ALL);
+        }
+
+        try {
+            nm.notify(id, b.build());
+        } catch (Exception ignored) {
+        }
     }
 }

@@ -658,7 +658,24 @@ function viewLibrary(){
     ${SUBJECTS.map(s=>`<button class="btn sm ${libFilter===s.id?'':'ghost'}" onclick="libFilter='${s.id}';render()">${s.name}</button>`).join('')}
   </div>`;
 
-  const list = filtered.length ? filtered.slice().reverse().map(p=>`
+  // 从网页收进来的资料（存本机，不上传）
+  let grabbed = [];
+  try{ if(window.Native && Native.listGrabbed) grabbed = JSON.parse(Native.listGrabbed() || '[]'); }catch(e){ grabbed = []; }
+
+  const gList = grabbed.length ? grabbed.map(g=>`
+    <div class="pack">
+      <div style="display:flex;gap:12px;align-items:flex-start">
+        <img src="file://${g.path}" alt="" style="width:78px;height:104px;object-fit:cover;object-position:top;border-radius:8px;border:1px solid var(--line);flex:none;background:#fff" onerror="this.style.visibility='hidden'">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13.5px;line-height:1.6;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden">${esc(g.preview || '（纯图片，没有文字层）')}</div>
+          <div class="pack-desc" style="margin-top:6px">${new Date(g.time).toLocaleString('zh-CN')} · ${Math.round(g.size/1024)} KB</div>
+          <button class="btn ghost sm" style="margin-top:8px" onclick="delGrabbed('${g.file}')">删除</button>
+        </div>
+      </div>
+    </div>`).join('')
+    : `<div class="pack-desc" style="padding:2px 2px 4px">还没收过东西。点右上角「收网页」，在弹出的浏览器里登录，翻到想留的那一页，点绿色「收进来」。</div>`;
+
+  const packList = filtered.length ? filtered.slice().reverse().map(p=>`
     <div class="pack" onclick="openPack('${p.id}')">
       <div class="pack-head">
         <div class="subj-bar ${subj(p.subject).cls}" style="min-height:22px"></div>
@@ -669,10 +686,35 @@ function viewLibrary(){
       </div>
       <div class="pack-desc">${(p.points||[]).length} 个知识点 · ${(p.questions||[]).length} 道题 ${p.pitfall?'· 有易错点':''}</div>
     </div>`).join('')
-    : `<div class="empty"><div class="big">▤</div><p>资料库还是空的</p><p class="hint">去「学习计划」点备料，生成后会归档到这里</p></div>`;
+    : `<div class="empty"><div class="big">▤</div><p>还没生成过学习包</p><p class="hint">去「学习计划」点备料</p></div>`;
 
-  return `<div class="sec-h">资料库 <button class="btn sm" onclick="openPackGenerator()">＋ 备料</button></div>${tabs}${list}<div style="height:80px"></div>`;
+  return `<div class="sec-h">资料库
+      <span style="display:flex;gap:8px">
+        <button class="btn sm ghost" onclick="openGrabber()">↓ 收网页</button>
+        <button class="btn sm" onclick="openPackGenerator()">＋ 备料</button>
+      </span>
+    </div>
+    <div class="card-title">从网页收的 · ${grabbed.length}</div>
+    ${gList}
+    <div class="card-title" style="margin-top:24px">学习包 · ${DB.packs.length}</div>
+    ${tabs}${packList}<div style="height:80px"></div>`;
 }
+
+/* ---------- 收网页资料 ---------- */
+function openGrabber(){
+  if(window.Native && Native.openGrabber){
+    Native.openGrabber('');
+  }else{
+    toast('浏览器预览里用不了，装成 App 后才行');
+  }
+}
+function delGrabbed(name){
+  if(!confirm('删掉这条资料？')) return;
+  try{ if(window.Native && Native.deleteGrabbed) Native.deleteGrabbed(name); }catch(e){}
+  render();
+  toast('已删除');
+}
+function onGrabbed(){ if(TAB==='library') render(); }
 
 /* ============================================================
    弹窗
